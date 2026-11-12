@@ -8,12 +8,15 @@ import Link from "next/link";
 const COUPONS: Record<string, { type: "flat" | "percent" | "free"; value: number; label: string }> = {
   FREE100: { type: "free", value: 100, label: "100% OFF — Free Report" },
   NAMEFREE: { type: "free", value: 100, label: "Free Name Report" },
+  TEST0: { type: "free", value: 100, label: "Test Free Access" },
+  OFF10: { type: "percent", value: 10, label: "10% OFF" },
+  OFF20: { type: "percent", value: 20, label: "20% OFF" },
+  OFF30: { type: "percent", value: 30, label: "30% OFF" },
+  HALF50: { type: "percent", value: 50, label: "50% OFF" },
   SAVE100: { type: "flat", value: 100, label: "₹100 OFF" },
   SAVE150: { type: "flat", value: 150, label: "₹150 OFF" },
   SAVE200: { type: "flat", value: 200, label: "₹200 OFF" },
-  HALF50: { type: "percent", value: 50, label: "50% OFF" },
   WELCOME: { type: "flat", value: 99, label: "₹99 OFF Welcome" },
-  TEST0: { type: "free", value: 100, label: "Test Free Access" },
 };
 
 const BASE_PRICE = 299;
@@ -225,7 +228,7 @@ function ResultContent() {
               <li key={f} className="flex items-center gap-2"><span className="text-emerald-500">✓</span>{f}</li>
             ))}
           </ul>
-          <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800">Have a coupon? Apply at checkout — codes like <strong>FREE100</strong> unlock the report free.</p>
+          <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800">Coupons: <strong>OFF10</strong> / <strong>OFF20</strong> / <strong>OFF30</strong> / <strong>FREE100</strong></p>
           <button onClick={() => setShowPay(true)} className="mt-4 w-full rounded-xl bg-maroon-800 py-3.5 text-sm font-semibold text-white shadow-lg">Get My Corrected Name — ₹{BASE_PRICE} →</button>
         </div>
 
@@ -252,7 +255,7 @@ function ResultContent() {
             <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" className="mb-4 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-maroon-400" />
             <label className="mb-1 block text-sm font-medium text-gray-700">Coupon Code</label>
             <div className="mb-2 flex gap-2">
-              <input type="text" value={coupon} onChange={(e) => { setCoupon(e.target.value); setCouponError(""); }} placeholder="e.g. FREE100" className="flex-1 rounded-xl border border-gray-200 px-4 py-3 text-sm uppercase outline-none focus:border-maroon-400" />
+              <input type="text" value={coupon} onChange={(e) => { setCoupon(e.target.value); setCouponError(""); }} placeholder="e.g. OFF20 or FREE100" className="flex-1 rounded-xl border border-gray-200 px-4 py-3 text-sm uppercase outline-none focus:border-maroon-400" />
               <button type="button" onClick={applyCoupon} className="rounded-xl bg-gray-900 px-4 text-sm font-semibold text-white">Apply</button>
             </div>
             {couponError && <p className="mb-2 text-xs text-red-600">{couponError}</p>}
