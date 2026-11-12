@@ -1,12 +1,9 @@
 import NameForm from "@/components/NameForm";
 import ScrollToTopButton from "@/components/ScrollToTopButton";
-import SiteHeader from "@/components/SiteHeader";
 
 export default function HomePage() {
   return (
     <div className="min-h-screen">
-      <SiteHeader />
-
       <section className="mx-auto grid max-w-6xl items-center gap-10 px-4 py-12 sm:px-6 lg:grid-cols-2 lg:py-20">
         <div className="order-2 lg:order-1">
           <p className="mb-3 text-sm font-semibold uppercase tracking-wider text-brand-600">
@@ -45,6 +42,24 @@ export default function HomePage() {
           <div>
             <p className="font-serif text-xl font-bold text-brand-800">Private</p>
             <p className="text-sm text-gray-500">No Data Stored</p>
+          </div>
+        </div>
+      </section>
+
+      <section className="border-t border-brand-100 bg-white/80 py-12">
+        <div className="mx-auto max-w-4xl px-4">
+          <h2 className="mb-6 text-center font-serif text-2xl font-bold text-gray-900">Our tools</h2>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <a href="/" className="rounded-2xl border-2 border-brand-200 bg-brand-50 p-5 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-wide text-brand-600">Active</p>
+              <p className="mt-1 font-serif text-xl font-bold text-gray-900">Name Numerology</p>
+              <p className="mt-1 text-sm text-gray-600">Chaldean name check, core numbers & corrected spellings.</p>
+            </a>
+            <a href="/navagraha" className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition hover:border-brand-300">
+              <p className="text-xs font-semibold uppercase tracking-wide text-brand-600">New</p>
+              <p className="mt-1 font-serif text-xl font-bold text-gray-900">Navagraha</p>
+              <p className="mt-1 text-sm text-gray-600">Nine planets, ruling graha from birth day & remedies.</p>
+            </a>
           </div>
         </div>
       </section>
