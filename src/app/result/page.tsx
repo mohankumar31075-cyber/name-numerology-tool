@@ -36,7 +36,6 @@ function ResultContent() {
   const [addonLal, setAddonLal] = useState(false);
   const [addonMobile, setAddonMobile] = useState(false);
   const [unlocked, setUnlocked] = useState(false);
-  const [paying, setPaying] = useState(false);
 
   const analysis: FullAnalysis | null = useMemo(() => {
     const name = searchParams.get("name");
@@ -52,8 +51,7 @@ function ResultContent() {
     return (
       <div className="mx-auto max-w-lg px-4 py-20 text-center">
         <h1 className="mb-4 text-2xl font-bold text-gray-900">Missing details</h1>
-        <p className="mb-6 text-gray-600">Please go back and fill the form completely.</p>
-        <Link href="/" className="inline-flex rounded-xl bg-maroon-800 px-6 py-3 font-semibold text-white">← Back to Form</Link>
+        <Link href="/" className="inline-flex rounded-xl bg-brand-700 px-6 py-3 font-semibold text-white">← Back to Form</Link>
       </div>
     );
   }
@@ -77,7 +75,9 @@ function ResultContent() {
   const total = Math.max(0, subtotal - discount);
 
   const whatsappNumber = "919008831075";
-  const orderMsg = encodeURIComponent(`Hi, I want the Name Correction Report.\n\nName: ${fullName}\nDOB: ${day}/${month}/${year}\nName Number: ${name.nameNumber}\nLife Path: ${lifePath.lifePath}\nWhatsApp: ${wa || "—"}\nEmail: ${email || "—"}\nCoupon: ${couponApplied || "none"}\nAdd-ons: Finance=${addonFinance}, Lal Kitab=${addonLal}, Mobile=${addonMobile}\nTotal: ₹${total}${isFree ? " (FREE)" : ""}`);
+  const orderMsg = encodeURIComponent(
+    `Hi, I want the Name Correction Report. Please send the payment QR / UPI link on WhatsApp.\n\nName: ${fullName}\nDOB: ${day}/${month}/${year}\nName Number: ${name.nameNumber}\nLife Path: ${lifePath.lifePath}\nWhatsApp: ${wa || "—"}\nEmail: ${email || "—"}\nCoupon: ${couponApplied || "none"}\nAdd-ons: Finance=${addonFinance}, Lal Kitab=${addonLal}, Mobile=${addonMobile}\nTotal: ₹${total}${isFree ? " (FREE)" : ""}`
+  );
   const whatsappUrl = `https://wa.me/${whatsappNumber}?text=${orderMsg}`;
 
   function applyCoupon() {
@@ -88,76 +88,14 @@ function ResultContent() {
     setCouponError("");
   }
 
-  async function handlePay() {
+  function handlePay() {
     if (wa.length < 10) {
       alert("Please enter a valid 10-digit WhatsApp number");
       return;
     }
-    if (isFree || total === 0) {
-      setUnlocked(true);
-      setShowPay(false);
-      return;
-    }
-    setPaying(true);
-    try {
-      const res = await fetch("/api/razorpay/order", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amount: total, name: fullName, contact: wa, email }),
-      });
-      const data = await res.json();
-      if (data.demo) {
-        const ok = confirm("Razorpay keys not set yet. Click OK to unlock in DEMO mode for testing.");
-        if (ok) { setUnlocked(true); setShowPay(false); }
-        setPaying(false);
-        return;
-      }
-      if (data.error || !data.orderId) {
-        alert(data.error || "Could not create payment order");
-        setPaying(false);
-        return;
-      }
-      await new Promise<void>((resolve, reject) => {
-        if ((window as any).Razorpay) return resolve();
-        const s = document.createElement("script");
-        s.src = "https://checkout.razorpay.com/v1/checkout.js";
-        s.onload = () => resolve();
-        s.onerror = () => reject(new Error("Razorpay script failed"));
-        document.body.appendChild(s);
-      });
-      const rzp = new (window as any).Razorpay({
-        key: data.keyId,
-        amount: data.amount,
-        currency: data.currency || "INR",
-        name: "Name Numerology Report",
-        description: `Name correction for ${fullName}`,
-        order_id: data.orderId,
-        prefill: { name: fullName, contact: wa, email: email || undefined },
-        theme: { color: "#7f1d3d" },
-        handler: async function (response: any) {
-          try {
-            const v = await fetch("/api/razorpay/verify", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(response),
-            });
-            const vr = await v.json();
-            if (vr.verified) {
-              setUnlocked(true);
-              setShowPay(false);
-            } else alert("Payment verification failed");
-          } catch {
-            alert("Verification error");
-          }
-        },
-      });
-      rzp.open();
-    } catch (e) {
-      console.error(e);
-      alert("Payment failed to start");
-    } finally {
-      setPaying(false);
-    }
+    setUnlocked(true);
+    setShowPay(false);
+    setTimeout(() => window.open(whatsappUrl, "_blank"), 300);
   }
 
   const coreNumbers = [
@@ -169,8 +107,8 @@ function ResultContent() {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-orange-50/50 via-white to-maroon-50/30 pb-28">
-      <header className="border-b border-gray-100 bg-white/90 backdrop-blur">
+    <div className="min-h-screen pb-28">
+      <header className="border-b border-brand-100 bg-white/90 backdrop-blur">
         <div className="mx-auto flex max-w-lg items-center justify-between px-4 py-3">
           <Link href="/" className="text-sm font-medium text-gray-600">← Back</Link>
           <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-700">{unlocked ? "Unlocked" : "Free Preview"}</span>
@@ -192,7 +130,7 @@ function ResultContent() {
 
         {compatibility.hasIssue && (
           <p className="mb-5 text-center font-serif text-lg font-semibold leading-snug text-gray-900">
-            {fullName.toUpperCase()} is vibrating at <span className="text-maroon-800">{name.nameNumber}</span> — and it&apos;s working against your money luck
+            {fullName.toUpperCase()} is vibrating at <span className="text-brand-800">{name.nameNumber}</span> — and it&apos;s working against your money luck
           </p>
         )}
 
@@ -231,7 +169,7 @@ function ResultContent() {
               <p className="mt-2 text-sm text-emerald-700">
                 New vibration <strong>{correctedTease.targetVibration}</strong> ✓ {correctedTease.targetTitle}
               </p>
-              <button onClick={() => setShowPay(true)} className="mt-4 w-full rounded-xl bg-maroon-800 py-3.5 text-sm font-semibold text-white shadow-lg">
+              <button onClick={() => setShowPay(true)} className="mt-4 w-full rounded-xl bg-brand-700 py-3.5 text-sm font-semibold text-white shadow-lg">
                 🔒 Unlock My Corrected Name
               </button>
             </>
@@ -250,7 +188,7 @@ function ResultContent() {
                 </div>
               ))}
               <a href={whatsappUrl} target="_blank" rel="noopener noreferrer" className="mt-2 flex w-full items-center justify-center rounded-xl bg-green-600 py-3 text-sm font-semibold text-white">
-                Get full PDF report on WhatsApp →
+                WhatsApp us for full PDF + payment QR →
               </a>
             </div>
           )}
@@ -258,7 +196,6 @@ function ResultContent() {
 
         <section className="mb-8">
           <h2 className="mb-1 font-serif text-xl font-bold text-gray-900">Your Core Numbers</h2>
-          <p className="mb-4 text-sm text-gray-500">Five key numbers derived from your name and birth date.</p>
           <div className="space-y-2.5">
             {coreNumbers.map((item) => (
               <div key={item.label} className={`flex items-center gap-3 rounded-2xl ${item.bg} p-3.5`}>
@@ -280,14 +217,13 @@ function ResultContent() {
 
         <section className="mb-8">
           <h2 className="mb-1 font-serif text-xl font-bold text-gray-900">Your Name Number</h2>
-          <p className="mb-4 text-sm text-gray-500">Every letter has a Chaldean value.</p>
           <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
             <p className="mb-4 text-center font-serif text-lg font-bold tracking-widest text-gray-900">{fullName.toUpperCase()}</p>
             <div className="mb-4 flex flex-wrap justify-center gap-1.5">
               {name.letterBreakdown.map((item, idx) => (
                 <div key={idx} className="flex flex-col items-center">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-md bg-maroon-800 text-sm font-bold text-white">{item.letter}</div>
-                  <span className="mt-0.5 text-[10px] font-medium text-maroon-700">{item.value}</span>
+                  <div className="flex h-9 w-9 items-center justify-center rounded-md bg-brand-800 text-sm font-bold text-white">{item.letter}</div>
+                  <span className="mt-0.5 text-[10px] font-medium text-brand-700">{item.value}</span>
                 </div>
               ))}
             </div>
@@ -300,13 +236,13 @@ function ResultContent() {
 
         <section className="mb-8">
           <h2 className="mb-1 font-serif text-xl font-bold text-gray-900">Your Name Number Analysis</h2>
-          <div className="mb-3 overflow-hidden rounded-2xl bg-gradient-to-r from-maroon-800 to-maroon-950 p-4 text-white">
+          <div className="mb-3 overflow-hidden rounded-2xl bg-gradient-to-r from-brand-800 to-brand-950 p-4 text-white">
             <div className="flex items-center gap-3">
               <div className="flex h-14 w-14 items-center justify-center rounded-xl border border-white/30 bg-white/10 text-2xl font-bold">{name.nameNumber}</div>
               <div>
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-maroon-200">Name Number</p>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-200">Name Number</p>
                 <p className="text-lg font-bold">{nameMeaning.title}</p>
-                <p className="text-xs text-maroon-100">{nameMeaning.short}</p>
+                <p className="text-xs text-brand-100">{nameMeaning.short}</p>
               </div>
             </div>
           </div>
@@ -324,14 +260,13 @@ function ResultContent() {
 
         {!unlocked && (
           <div className="mb-6 rounded-2xl border border-gray-100 bg-white p-5 shadow-md">
-            <p className="text-sm text-gray-600">Full report, prepared for you</p>
+            <p className="text-sm text-gray-600">Full report via WhatsApp</p>
             <div className="mt-1 flex items-baseline gap-2">
               <span className="text-3xl font-bold text-gray-900">₹{BASE_PRICE}</span>
               <span className="text-lg text-gray-400 line-through">₹499</span>
-              <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800">MAX ₹299</span>
             </div>
-            <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800">Coupons: OFF10 / OFF20 / OFF30 / FREE100</p>
-            <button onClick={() => setShowPay(true)} className="mt-4 w-full rounded-xl bg-maroon-800 py-3.5 text-sm font-semibold text-white shadow-lg">Get My Corrected Name — ₹{BASE_PRICE} →</button>
+            <p className="mt-2 text-xs text-gray-500">Pay via QR / UPI link we send on WhatsApp after you unlock.</p>
+            <button onClick={() => setShowPay(true)} className="mt-4 w-full rounded-xl bg-brand-700 py-3.5 text-sm font-semibold text-white shadow-lg">Get My Corrected Name — ₹{BASE_PRICE} →</button>
           </div>
         )}
       </main>
@@ -340,7 +275,7 @@ function ResultContent() {
         <div className="fixed bottom-0 left-0 right-0 border-t border-gray-200 bg-white/95 p-3 backdrop-blur">
           <div className="mx-auto flex max-w-lg gap-2">
             <Link href="/" className="flex h-12 w-12 items-center justify-center rounded-xl border border-gray-200 text-gray-600">←</Link>
-            <button onClick={() => setShowPay(true)} className="flex-1 rounded-xl bg-maroon-800 text-sm font-semibold text-white shadow-lg">Get My Corrected Name — ₹{BASE_PRICE} →</button>
+            <button onClick={() => setShowPay(true)} className="flex-1 rounded-xl bg-brand-700 text-sm font-semibold text-white shadow-lg">Get My Corrected Name — ₹{BASE_PRICE} →</button>
           </div>
         </div>
       )}
@@ -353,40 +288,25 @@ function ResultContent() {
               <button onClick={() => setShowPay(false)} className="rounded-full bg-gray-100 px-3 py-1 text-sm text-gray-600">✕</button>
             </div>
             <label className="mb-1 block text-sm font-medium text-gray-700">WhatsApp Number *</label>
-            <input type="tel" value={wa} onChange={(e) => setWa(e.target.value)} placeholder="10-digit mobile number" className="mb-4 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-maroon-400" />
+            <input type="tel" value={wa} onChange={(e) => setWa(e.target.value)} placeholder="10-digit mobile number" className="mb-4 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-brand-400" />
             <label className="mb-1 block text-sm font-medium text-gray-700">Email (optional)</label>
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" className="mb-4 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-maroon-400" />
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" className="mb-4 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-brand-400" />
             <label className="mb-1 block text-sm font-medium text-gray-700">Coupon Code</label>
             <div className="mb-2 flex gap-2">
-              <input type="text" value={coupon} onChange={(e) => { setCoupon(e.target.value); setCouponError(""); }} placeholder="e.g. FREE100 or OFF20" className="flex-1 rounded-xl border border-gray-200 px-4 py-3 text-sm uppercase outline-none focus:border-maroon-400" />
+              <input type="text" value={coupon} onChange={(e) => { setCoupon(e.target.value); setCouponError(""); }} placeholder="e.g. FREE100" className="flex-1 rounded-xl border border-gray-200 px-4 py-3 text-sm uppercase outline-none focus:border-brand-400" />
               <button type="button" onClick={applyCoupon} className="rounded-xl bg-gray-900 px-4 text-sm font-semibold text-white">Apply</button>
             </div>
             {couponError && <p className="mb-2 text-xs text-red-600">{couponError}</p>}
             {applied && <p className="mb-4 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800">✓ {applied.label} applied</p>}
-            <div className="mb-4 space-y-2">
-              {[
-                { label: "Add Finance & Career Report", old: 299, price: ADDON_FINANCE, checked: addonFinance, set: setAddonFinance },
-                { label: "Add Lal Kitab Report", old: 199, price: ADDON_LAL, checked: addonLal, set: setAddonLal },
-                { label: "Add Mobile Numerology Report", old: 149, price: ADDON_MOBILE, checked: addonMobile, set: setAddonMobile },
-              ].map((a) => (
-                <label key={a.label} className="flex cursor-pointer items-start gap-3 rounded-xl border border-amber-100 bg-amber-50/50 p-3">
-                  <input type="checkbox" checked={a.checked} onChange={(e) => a.set(e.target.checked)} className="mt-1" />
-                  <div>
-                    <p className="text-sm font-semibold text-gray-900">{a.label}</p>
-                    <p className="text-sm text-maroon-800"><span className="text-gray-400 line-through">₹{a.old}</span> <strong>₹{a.price}</strong></p>
-                  </div>
-                </label>
-              ))}
-            </div>
             <div className="mb-4 rounded-xl bg-gray-50 px-4 py-3 text-sm">
               <div className="flex justify-between text-gray-600"><span>Subtotal</span><span>₹{subtotal}</span></div>
               {discount > 0 && <div className="flex justify-between text-emerald-700"><span>Discount</span><span>-₹{discount}</span></div>}
               <div className="mt-1 flex justify-between text-base font-bold text-gray-900"><span>Total</span><span>{isFree || total === 0 ? "FREE" : `₹${total}`}</span></div>
             </div>
-            <button type="button" disabled={paying} onClick={handlePay} className="flex w-full items-center justify-center rounded-xl bg-maroon-800 py-3.5 text-sm font-semibold text-white shadow-lg disabled:opacity-70">
-              {paying ? "Please wait..." : isFree || total === 0 ? "Unlock Free Report →" : `Pay ₹${total} with Razorpay →`}
+            <button type="button" onClick={handlePay} className="flex w-full items-center justify-center rounded-xl bg-green-600 py-3.5 text-sm font-semibold text-white shadow-lg">
+              {isFree || total === 0 ? "Unlock Free Report →" : `Unlock & WhatsApp for QR (₹${total}) →`}
             </button>
-            <p className="mt-3 text-center text-[11px] text-gray-400">Report unlocks on this page · Razorpay when keys are set</p>
+            <p className="mt-3 text-center text-[11px] text-gray-400">We reply on WhatsApp with payment QR / UPI and the full report.</p>
           </div>
         </div>
       )}
@@ -396,7 +316,7 @@ function ResultContent() {
 
 export default function ResultPage() {
   return (
-    <Suspense fallback={<div className="flex min-h-screen items-center justify-center"><p className="text-gray-500">Loading your analysis...</p></div>}>
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center"><p className="text-gray-500">Loading...</p></div>}>
       <ResultContent />
     </Suspense>
   );
