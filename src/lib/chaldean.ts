@@ -1,6 +1,6 @@
 /**
  * Chaldean Numerology Engine
- * Standard letter values used in Indian name correction practice.
+ * Full analysis: Name, Life Path, Destiny, Personality, Soul Urge, Subconscious
  */
 
 export const CHALDEAN_MAP: Record<string, number> = {
@@ -13,6 +13,8 @@ export const CHALDEAN_MAP: Record<string, number> = {
   O: 7, Z: 7,
   F: 8, P: 8,
 };
+
+const VOWELS = new Set(["A", "E", "I", "O", "U"]);
 
 export function reduceToSingleDigit(n: number): number {
   while (n > 9) {
@@ -28,10 +30,7 @@ export function getNameNumber(name: string): {
   nameNumber: number;
   letterBreakdown: { letter: string; value: number }[];
 } {
-  const clean = name
-    .toUpperCase()
-    .replace(/[^A-Z]/g, "");
-
+  const clean = name.toUpperCase().replace(/[^A-Z]/g, "");
   const letterBreakdown: { letter: string; value: number }[] = [];
   let compound = 0;
 
@@ -48,43 +47,73 @@ export function getNameNumber(name: string): {
   };
 }
 
-/** Birth / Destiny number from full DOB (day + month + year) */
-export function getBirthNumber(day: number, month: number, year: number): {
+/** Life Path from full DOB */
+export function getLifePath(day: number, month: number, year: number): {
   compound: number;
-  birthNumber: number;
+  lifePath: number;
 } {
   const compound = day + month + year;
-  return {
-    compound,
-    birthNumber: reduceToSingleDigit(compound),
-  };
+  return { compound, lifePath: reduceToSingleDigit(compound) };
 }
 
-/** Psychic / Birth Day number (just the day reduced) */
+/** Psychic / Birth Day number */
 export function getPsychicNumber(day: number): number {
   return reduceToSingleDigit(day);
+}
+
+/** Soul Urge = sum of vowels only */
+export function getSoulUrge(name: string): {
+  compound: number;
+  soulUrge: number;
+} {
+  const clean = name.toUpperCase().replace(/[^A-Z]/g, "");
+  let compound = 0;
+  for (const letter of clean) {
+    if (VOWELS.has(letter)) compound += CHALDEAN_MAP[letter] ?? 0;
+  }
+  return { compound, soulUrge: reduceToSingleDigit(compound) || 0 };
+}
+
+/** Personality = sum of consonants only */
+export function getPersonality(name: string): {
+  compound: number;
+  personality: number;
+} {
+  const clean = name.toUpperCase().replace(/[^A-Z]/g, "");
+  let compound = 0;
+  for (const letter of clean) {
+    if (!VOWELS.has(letter)) compound += CHALDEAN_MAP[letter] ?? 0;
+  }
+  return { compound, personality: reduceToSingleDigit(compound) || 0 };
+}
+
+/** Subconscious Self = count of distinct numbers present in the name (1-8) */
+export function getSubconsciousSelf(name: string): number {
+  const clean = name.toUpperCase().replace(/[^A-Z]/g, "");
+  const present = new Set<number>();
+  for (const letter of clean) {
+    const v = CHALDEAN_MAP[letter];
+    if (v) present.add(v);
+  }
+  const count = present.size;
+  return count === 0 ? 1 : reduceToSingleDigit(count) || count;
 }
 
 export type CompatibilityStatus = "excellent" | "good" | "average" | "needs_attention";
 
 export function getCompatibility(
   nameNumber: number,
-  birthNumber: number
+  lifePath: number
 ): {
   status: CompatibilityStatus;
-  score: number; // 0-100
+  score: number;
   message: string;
 } {
-  // Simple rule set commonly used in name correction:
-  // Same number = excellent
-  // Friendly pairs = good
-  // Others = average / needs attention
-
-  if (nameNumber === birthNumber) {
+  if (nameNumber === lifePath) {
     return {
       status: "excellent",
       score: 95,
-      message: "Your name number perfectly matches your birth number. Strong natural alignment.",
+      message: "Your name number perfectly matches your life path. Strong natural alignment.",
     };
   }
 
@@ -100,85 +129,115 @@ export function getCompatibility(
     9: [1, 2, 3, 5, 6, 9],
   };
 
-  const isFriendly = friendly[nameNumber]?.includes(birthNumber) ?? false;
-
-  if (isFriendly) {
+  if (friendly[nameNumber]?.includes(lifePath)) {
     return {
       status: "good",
       score: 75,
-      message: "Your name and birth numbers are compatible. Minor refinements can still strengthen results.",
+      message: "Your name and life path numbers are compatible. Minor refinements can still strengthen results.",
     };
   }
 
-  // Some common "challenging" combinations
   const challenging = [
     [1, 8], [2, 4], [2, 8], [3, 8], [4, 1], [4, 2], [7, 1], [7, 3], [7, 9], [8, 1], [8, 2], [8, 3], [8, 9],
   ];
 
-  const isChallenging = challenging.some(
-    ([a, b]) => (nameNumber === a && birthNumber === b) || (nameNumber === b && birthNumber === a)
-  );
-
-  if (isChallenging) {
+  if (challenging.some(([a, b]) => (nameNumber === a && lifePath === b) || (nameNumber === b && lifePath === a))) {
     return {
       status: "needs_attention",
       score: 35,
-      message: "There is a noticeable mismatch between your name vibration and birth energy. Name correction can help restore balance.",
+      message: "There is a noticeable mismatch between your name vibration and life path. Name correction can help restore balance.",
     };
   }
 
   return {
     status: "average",
     score: 55,
-    message: "Your name and birth numbers are moderately aligned. Small spelling adjustments may improve flow and opportunities.",
+    message: "Your name and life path are moderately aligned. Small spelling adjustments may improve flow and opportunities.",
   };
 }
 
-export const NUMBER_MEANINGS: Record<number, { planet: string; keywords: string; short: string }> = {
+export const NUMBER_MEANINGS: Record<
+  number,
+  {
+    planet: string;
+    title: string;
+    short: string;
+    keywords: string;
+    strengths: string[];
+    challenges: string[];
+  }
+> = {
   1: {
     planet: "Sun",
-    keywords: "Leadership, independence, ambition, originality",
+    title: "Leadership & Ambition",
     short: "The Leader — strong will, initiative, and drive for recognition.",
+    keywords: "Leadership, independence, ambition, originality",
+    strengths: ["Natural leadership", "Strong initiative", "Original thinking"],
+    challenges: ["Ego clashes", "Impatience", "Difficulty collaborating"],
   },
   2: {
     planet: "Moon",
-    keywords: "Sensitivity, cooperation, intuition, diplomacy",
+    title: "Harmony & Diplomacy",
     short: "The Peacemaker — emotional intelligence and partnership energy.",
+    keywords: "Sensitivity, cooperation, intuition, diplomacy",
+    strengths: ["Diplomacy", "Intuition", "Supportive nature"],
+    challenges: ["Over-sensitivity", "Indecision", "Dependency"],
   },
   3: {
     planet: "Jupiter",
-    keywords: "Creativity, expression, optimism, expansion",
+    title: "Creativity & Expression",
     short: "The Communicator — joyful, expressive, and growth-oriented.",
+    keywords: "Creativity, expression, optimism, expansion",
+    strengths: ["Creative expression", "Optimism", "Social charm"],
+    challenges: ["Scattered energy", "Over-talking", "Restlessness"],
   },
   4: {
     planet: "Rahu",
-    keywords: "Stability, hard work, practicality, structure",
+    title: "Stability & Structure",
     short: "The Builder — disciplined, reliable, and grounded.",
+    keywords: "Stability, hard work, practicality, structure",
+    strengths: ["Discipline", "Reliability", "Practical skills"],
+    challenges: ["Rigidity", "Resistance to change", "Overwork"],
   },
   5: {
     planet: "Mercury",
-    keywords: "Versatility, communication, freedom, curiosity",
+    title: "Freedom & Versatility",
     short: "The Explorer — adaptable, quick-minded, and dynamic.",
+    keywords: "Versatility, communication, freedom, curiosity",
+    strengths: ["Adaptability", "Quick mind", "Communication"],
+    challenges: ["Restlessness", "Inconsistency", "Scattered focus"],
   },
   6: {
     planet: "Venus",
+    title: "Love & Luxury",
+    short: "Venus-ruled — magnetic, artistic, luxurious.",
     keywords: "Harmony, love, beauty, responsibility",
-    short: "The Nurturer — artistic, balanced, and relationship-focused.",
+    strengths: ["Attracts love & comfort", "Artistic gifts", "Family harmony"],
+    challenges: ["Over-indulgence", "Relationship drama", "Distraction by beauty"],
   },
   7: {
     planet: "Ketu",
-    keywords: "Analysis, spirituality, introspection, wisdom",
+    title: "Wisdom & Analysis",
     short: "The Seeker — deep thinker with spiritual and analytical strength.",
+    keywords: "Analysis, spirituality, introspection, wisdom",
+    strengths: ["Deep analysis", "Spiritual insight", "Research ability"],
+    challenges: ["Isolation", "Overthinking", "Detachment"],
   },
   8: {
     planet: "Saturn",
-    keywords: "Power, material success, discipline, karma",
+    title: "Power & Achievement",
     short: "The Achiever — ambitious, resilient, and authority-oriented.",
+    keywords: "Power, material success, discipline, karma",
+    strengths: ["Ambition", "Resilience", "Authority"],
+    challenges: ["Hard lessons", "Delays", "Heavy responsibilities"],
   },
   9: {
     planet: "Mars",
-    keywords: "Energy, courage, compassion, completion",
+    title: "Courage & Compassion",
     short: "The Humanitarian — passionate, idealistic, and action-driven.",
+    keywords: "Energy, courage, compassion, completion",
+    strengths: ["Courage", "Compassion", "Drive to complete"],
+    challenges: ["Impulsiveness", "Conflict", "Burnout"],
   },
 };
 
@@ -189,11 +248,14 @@ export interface FullAnalysis {
   year: number;
   gender: string;
   name: ReturnType<typeof getNameNumber>;
-  birth: ReturnType<typeof getBirthNumber>;
+  lifePath: ReturnType<typeof getLifePath>;
   psychic: number;
+  soulUrge: ReturnType<typeof getSoulUrge>;
+  personality: ReturnType<typeof getPersonality>;
+  subconscious: number;
   compatibility: ReturnType<typeof getCompatibility>;
   nameMeaning: (typeof NUMBER_MEANINGS)[number];
-  birthMeaning: (typeof NUMBER_MEANINGS)[number];
+  lifePathMeaning: (typeof NUMBER_MEANINGS)[number];
 }
 
 export function analyzeName(
@@ -204,9 +266,12 @@ export function analyzeName(
   gender: string
 ): FullAnalysis {
   const name = getNameNumber(fullName);
-  const birth = getBirthNumber(day, month, year);
+  const lifePath = getLifePath(day, month, year);
   const psychic = getPsychicNumber(day);
-  const compatibility = getCompatibility(name.nameNumber, birth.birthNumber);
+  const soulUrge = getSoulUrge(fullName);
+  const personality = getPersonality(fullName);
+  const subconscious = getSubconsciousSelf(fullName);
+  const compatibility = getCompatibility(name.nameNumber, lifePath.lifePath);
 
   return {
     fullName,
@@ -215,10 +280,13 @@ export function analyzeName(
     year,
     gender,
     name,
-    birth,
+    lifePath,
     psychic,
+    soulUrge,
+    personality,
+    subconscious,
     compatibility,
-    nameMeaning: NUMBER_MEANINGS[name.nameNumber],
-    birthMeaning: NUMBER_MEANINGS[birth.birthNumber],
+    nameMeaning: NUMBER_MEANINGS[name.nameNumber] ?? NUMBER_MEANINGS[1],
+    lifePathMeaning: NUMBER_MEANINGS[lifePath.lifePath] ?? NUMBER_MEANINGS[1],
   };
 }
