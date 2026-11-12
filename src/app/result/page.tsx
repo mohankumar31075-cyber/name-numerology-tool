@@ -51,8 +51,8 @@ function ResultContent() {
     needs_attention: "Needs Attention",
   };
 
-  // WhatsApp deep link — replace number with your own
-  const whatsappNumber = "919999999999"; // TODO: replace with your number
+  // Temp testing number — change later
+  const whatsappNumber = "919008831075";
   const whatsappMessage = encodeURIComponent(
     `Hi, I just checked my name on your tool.\n\nName: ${fullName}\nDOB: ${day}/${month}/${year}\nName Number: ${name.nameNumber}\nBirth Number: ${birth.birthNumber}\nCompatibility: ${statusLabels[compatibility.status]}\n\nI would like the detailed Name Correction Report.`
   );
