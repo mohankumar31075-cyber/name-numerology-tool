@@ -2,7 +2,7 @@
 
 import { useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
-import { analyzeName, type FullAnalysis } from "@/lib/chaldean";
+import { analyzeName, generateCorrectedNames, type FullAnalysis } from "@/lib/chaldean";
 import Link from "next/link";
 
 const COUPONS: Record<string, { type: "flat" | "percent" | "free"; value: number; label: string }> = {
@@ -35,6 +35,8 @@ function ResultContent() {
   const [addonFinance, setAddonFinance] = useState(false);
   const [addonLal, setAddonLal] = useState(false);
   const [addonMobile, setAddonMobile] = useState(false);
+  const [unlocked, setUnlocked] = useState(false);
+  const [paying, setPaying] = useState(false);
 
   const analysis: FullAnalysis | null = useMemo(() => {
     const name = searchParams.get("name");
@@ -56,7 +58,12 @@ function ResultContent() {
     );
   }
 
-  const { name, destiny, lifePath, soulUrge, personality, subconscious, compatibility, nameMeaning, lifePathMeaning, fullName, day, month, year, correctedTease } = analysis;
+  const {
+    name, destiny, lifePath, soulUrge, personality, subconscious, compatibility,
+    nameMeaning, lifePathMeaning, fullName, day, month, year, correctedTease, targetVibration,
+  } = analysis;
+
+  const correctedOptions = generateCorrectedNames(fullName, targetVibration || correctedTease.targetVibration || 6);
 
   const subtotal = BASE_PRICE + (addonFinance ? ADDON_FINANCE : 0) + (addonLal ? ADDON_LAL : 0) + (addonMobile ? ADDON_MOBILE : 0);
   let discount = 0;
@@ -69,6 +76,10 @@ function ResultContent() {
   }
   const total = Math.max(0, subtotal - discount);
 
+  const whatsappNumber = "919008831075";
+  const orderMsg = encodeURIComponent(`Hi, I want the Name Correction Report.\n\nName: ${fullName}\nDOB: ${day}/${month}/${year}\nName Number: ${name.nameNumber}\nLife Path: ${lifePath.lifePath}\nWhatsApp: ${wa || "—"}\nEmail: ${email || "—"}\nCoupon: ${couponApplied || "none"}\nAdd-ons: Finance=${addonFinance}, Lal Kitab=${addonLal}, Mobile=${addonMobile}\nTotal: ₹${total}${isFree ? " (FREE)" : ""}`);
+  const whatsappUrl = `https://wa.me/${whatsappNumber}?text=${orderMsg}`;
+
   function applyCoupon() {
     const code = coupon.trim().toUpperCase();
     if (!code) { setCouponError("Enter a coupon code"); return; }
@@ -77,13 +88,81 @@ function ResultContent() {
     setCouponError("");
   }
 
-  const whatsappNumber = "919008831075";
-  const orderMsg = encodeURIComponent(`Hi, I want the Name Correction Report.\n\nName: ${fullName}\nDOB: ${day}/${month}/${year}\nName Number: ${name.nameNumber}\nLife Path: ${lifePath.lifePath}\nWhatsApp: ${wa || "—"}\nEmail: ${email || "—"}\nCoupon: ${couponApplied || "none"}\nAdd-ons: Finance=${addonFinance}, Lal Kitab=${addonLal}, Mobile=${addonMobile}\nTotal: ₹${total}${isFree ? " (FREE)" : ""}`);
-  const whatsappUrl = `https://wa.me/${whatsappNumber}?text=${orderMsg}`;
+  async function handlePay() {
+    if (wa.length < 10) {
+      alert("Please enter a valid 10-digit WhatsApp number");
+      return;
+    }
+    if (isFree || total === 0) {
+      setUnlocked(true);
+      setShowPay(false);
+      return;
+    }
+    setPaying(true);
+    try {
+      const res = await fetch("/api/razorpay/order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: total, name: fullName, contact: wa, email }),
+      });
+      const data = await res.json();
+      if (data.demo) {
+        const ok = confirm("Razorpay keys not set yet. Click OK to unlock in DEMO mode for testing.");
+        if (ok) { setUnlocked(true); setShowPay(false); }
+        setPaying(false);
+        return;
+      }
+      if (data.error || !data.orderId) {
+        alert(data.error || "Could not create payment order");
+        setPaying(false);
+        return;
+      }
+      await new Promise<void>((resolve, reject) => {
+        if ((window as any).Razorpay) return resolve();
+        const s = document.createElement("script");
+        s.src = "https://checkout.razorpay.com/v1/checkout.js";
+        s.onload = () => resolve();
+        s.onerror = () => reject(new Error("Razorpay script failed"));
+        document.body.appendChild(s);
+      });
+      const rzp = new (window as any).Razorpay({
+        key: data.keyId,
+        amount: data.amount,
+        currency: data.currency || "INR",
+        name: "Name Numerology Report",
+        description: `Name correction for ${fullName}`,
+        order_id: data.orderId,
+        prefill: { name: fullName, contact: wa, email: email || undefined },
+        theme: { color: "#7f1d3d" },
+        handler: async function (response: any) {
+          try {
+            const v = await fetch("/api/razorpay/verify", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(response),
+            });
+            const vr = await v.json();
+            if (vr.verified) {
+              setUnlocked(true);
+              setShowPay(false);
+            } else alert("Payment verification failed");
+          } catch {
+            alert("Verification error");
+          }
+        },
+      });
+      rzp.open();
+    } catch (e) {
+      console.error(e);
+      alert("Payment failed to start");
+    } finally {
+      setPaying(false);
+    }
+  }
 
   const coreNumbers = [
     { label: "Your Life Path Number", value: lifePath.lifePath, desc: lifePathMeaning.short, color: "from-amber-400 to-orange-500", bg: "bg-amber-50" },
-    { label: "Your Name Destiny Number", value: destiny.destiny, desc: destiny.destiny === 11 || destiny.destiny === 22 ? "Master number energy." : "Destiny vibration from your full name.", color: "from-blue-400 to-indigo-500", bg: "bg-blue-50" },
+    { label: "Your Name Destiny Number", value: destiny.destiny, desc: "Destiny vibration from your full name.", color: "from-blue-400 to-indigo-500", bg: "bg-blue-50" },
     { label: "Your Personality Number", value: personality.personality, desc: "How others perceive you.", color: "from-emerald-400 to-teal-500", bg: "bg-emerald-50" },
     { label: "Your Soul Urge Number", value: soulUrge.soulUrge, desc: "Your inner desires and motivations.", color: "from-pink-400 to-rose-500", bg: "bg-pink-50" },
     { label: "Your Subconscious Self Number", value: subconscious, desc: "Instinctive response under pressure.", color: "from-violet-400 to-purple-500", bg: "bg-violet-50" },
@@ -94,7 +173,7 @@ function ResultContent() {
       <header className="border-b border-gray-100 bg-white/90 backdrop-blur">
         <div className="mx-auto flex max-w-lg items-center justify-between px-4 py-3">
           <Link href="/" className="text-sm font-medium text-gray-600">← Back</Link>
-          <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-700">Free Preview</span>
+          <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-700">{unlocked ? "Unlocked" : "Free Preview"}</span>
         </div>
       </header>
 
@@ -139,12 +218,42 @@ function ResultContent() {
         </div>
 
         <div className="mb-8 rounded-2xl border border-amber-200 bg-gradient-to-b from-amber-50 to-white p-5 text-center shadow-sm">
-          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-amber-700">Your Corrected Spelling Is Ready</p>
-          <p className="font-serif text-2xl font-bold tracking-wide text-gray-900">
-            {correctedTease.visibleStart}<span className="mx-0.5 blur-[5px] select-none">{correctedTease.blurred}</span>{correctedTease.visibleEnd ? ` ${correctedTease.visibleEnd}` : ""}
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-amber-700">
+            {unlocked ? "Your Corrected Spellings" : "Your Corrected Spelling Is Ready"}
           </p>
-          <p className="mt-2 text-sm text-emerald-700">New vibration <strong>{correctedTease.targetVibration}</strong> ✓ {correctedTease.targetTitle}</p>
-          <button onClick={() => setShowPay(true)} className="mt-4 w-full rounded-xl bg-maroon-800 py-3.5 text-sm font-semibold text-white shadow-lg">🔒 Unlock My Corrected Name</button>
+          {!unlocked ? (
+            <>
+              <p className="font-serif text-2xl font-bold tracking-wide text-gray-900">
+                {correctedTease.visibleStart}
+                <span className="mx-0.5 blur-[5px] select-none">{correctedTease.blurred}</span>
+                {correctedTease.visibleEnd ? ` ${correctedTease.visibleEnd}` : ""}
+              </p>
+              <p className="mt-2 text-sm text-emerald-700">
+                New vibration <strong>{correctedTease.targetVibration}</strong> ✓ {correctedTease.targetTitle}
+              </p>
+              <button onClick={() => setShowPay(true)} className="mt-4 w-full rounded-xl bg-maroon-800 py-3.5 text-sm font-semibold text-white shadow-lg">
+                🔒 Unlock My Corrected Name
+              </button>
+            </>
+          ) : (
+            <div className="space-y-3 text-left">
+              <p className="text-center text-sm text-emerald-700">
+                Target vibration <strong>{targetVibration || correctedTease.targetVibration}</strong> — recommended options
+              </p>
+              {correctedOptions.map((opt, i) => (
+                <div key={i} className="rounded-xl border border-emerald-100 bg-white p-3">
+                  <p className="font-serif text-lg font-bold text-gray-900">{opt.spelling}</p>
+                  <p className="text-xs text-gray-500">
+                    Name number <strong>{opt.nameNumber}</strong> · compound {opt.compound}
+                    {opt.nameNumber === (targetVibration || correctedTease.targetVibration) ? " · ✓ Target match" : ""}
+                  </p>
+                </div>
+              ))}
+              <a href={whatsappUrl} target="_blank" rel="noopener noreferrer" className="mt-2 flex w-full items-center justify-center rounded-xl bg-green-600 py-3 text-sm font-semibold text-white">
+                Get full PDF report on WhatsApp →
+              </a>
+            </div>
+          )}
         </div>
 
         <section className="mb-8">
@@ -171,9 +280,8 @@ function ResultContent() {
 
         <section className="mb-8">
           <h2 className="mb-1 font-serif text-xl font-bold text-gray-900">Your Name Number</h2>
-          <p className="mb-4 text-sm text-gray-500">Every letter has a Chaldean value. Here&apos;s how yours adds up.</p>
+          <p className="mb-4 text-sm text-gray-500">Every letter has a Chaldean value.</p>
           <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
-            <p className="mb-3 text-center text-[10px] font-semibold uppercase tracking-wide text-gray-400">Full Name</p>
             <p className="mb-4 text-center font-serif text-lg font-bold tracking-widest text-gray-900">{fullName.toUpperCase()}</p>
             <div className="mb-4 flex flex-wrap justify-center gap-1.5">
               {name.letterBreakdown.map((item, idx) => (
@@ -185,7 +293,6 @@ function ResultContent() {
             </div>
             <div className="rounded-xl bg-amber-50 px-3 py-3 text-center">
               <p className="text-xs text-gray-700">{name.letterBreakdown.map((i) => i.value).join(" + ")} = <strong>{name.compound}</strong></p>
-              <p className="mt-1 text-xs text-gray-500">↓ Reduced to single digit</p>
               <div className="mx-auto mt-2 flex h-12 w-12 items-center justify-center rounded-xl bg-gold-500 text-xl font-bold text-white shadow">{name.nameNumber}</div>
             </div>
           </div>
@@ -193,7 +300,6 @@ function ResultContent() {
 
         <section className="mb-8">
           <h2 className="mb-1 font-serif text-xl font-bold text-gray-900">Your Name Number Analysis</h2>
-          <p className="mb-4 text-sm text-gray-500">What number {name.nameNumber} means for you.</p>
           <div className="mb-3 overflow-hidden rounded-2xl bg-gradient-to-r from-maroon-800 to-maroon-950 p-4 text-white">
             <div className="flex items-center gap-3">
               <div className="flex h-14 w-14 items-center justify-center rounded-xl border border-white/30 bg-white/10 text-2xl font-bold">{name.nameNumber}</div>
@@ -207,40 +313,37 @@ function ResultContent() {
           <div className="space-y-3">
             <div className="rounded-2xl border border-emerald-100 bg-white p-4">
               <h3 className="mb-2 text-sm font-semibold text-emerald-800">Your Strengths</h3>
-              <ul className="space-y-1.5">{nameMeaning.strengths.map((s) => (<li key={s} className="flex items-start gap-2 text-sm text-gray-700"><span className="text-emerald-500">✓</span>{s}</li>))}</ul>
+              <ul className="space-y-1.5">{nameMeaning.strengths.map((s: string) => (<li key={s} className="flex items-start gap-2 text-sm text-gray-700"><span className="text-emerald-500">✓</span>{s}</li>))}</ul>
             </div>
             <div className="rounded-2xl border border-rose-100 bg-white p-4">
               <h3 className="mb-2 text-sm font-semibold text-rose-800">Common Challenges</h3>
-              <ul className="space-y-1.5">{nameMeaning.challenges.map((c) => (<li key={c} className="flex items-start gap-2 text-sm text-gray-700"><span className="text-rose-500">✗</span>{c}</li>))}</ul>
+              <ul className="space-y-1.5">{nameMeaning.challenges.map((c: string) => (<li key={c} className="flex items-start gap-2 text-sm text-gray-700"><span className="text-rose-500">✗</span>{c}</li>))}</ul>
             </div>
           </div>
         </section>
 
-        <div className="mb-6 rounded-2xl border border-gray-100 bg-white p-5 shadow-md">
-          <p className="text-sm text-gray-600">Full report, prepared for you</p>
-          <div className="mt-1 flex items-baseline gap-2">
-            <span className="text-3xl font-bold text-gray-900">₹{BASE_PRICE}</span>
-            <span className="text-lg text-gray-400 line-through">₹499</span>
-            <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800">MAX ₹299</span>
+        {!unlocked && (
+          <div className="mb-6 rounded-2xl border border-gray-100 bg-white p-5 shadow-md">
+            <p className="text-sm text-gray-600">Full report, prepared for you</p>
+            <div className="mt-1 flex items-baseline gap-2">
+              <span className="text-3xl font-bold text-gray-900">₹{BASE_PRICE}</span>
+              <span className="text-lg text-gray-400 line-through">₹499</span>
+              <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800">MAX ₹299</span>
+            </div>
+            <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800">Coupons: OFF10 / OFF20 / OFF30 / FREE100</p>
+            <button onClick={() => setShowPay(true)} className="mt-4 w-full rounded-xl bg-maroon-800 py-3.5 text-sm font-semibold text-white shadow-lg">Get My Corrected Name — ₹{BASE_PRICE} →</button>
           </div>
-          <ul className="mt-4 grid grid-cols-1 gap-2 text-sm text-gray-700">
-            {["Corrected name options", "Core numbers analysis", "Lo Shu grid reading", "Lucky numbers & colours", "Lucky mobile number", "Personalised remedies", "Career & money outlook", "PDF + WhatsApp delivery"].map((f) => (
-              <li key={f} className="flex items-center gap-2"><span className="text-emerald-500">✓</span>{f}</li>
-            ))}
-          </ul>
-          <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800">Coupons: <strong>OFF10</strong> / <strong>OFF20</strong> / <strong>OFF30</strong> / <strong>FREE100</strong></p>
-          <button onClick={() => setShowPay(true)} className="mt-4 w-full rounded-xl bg-maroon-800 py-3.5 text-sm font-semibold text-white shadow-lg">Get My Corrected Name — ₹{BASE_PRICE} →</button>
-        </div>
-
-        <p className="text-center text-xs text-gray-400">Free preview uses traditional Chaldean numerology for guidance only.</p>
+        )}
       </main>
 
-      <div className="fixed bottom-0 left-0 right-0 border-t border-gray-200 bg-white/95 p-3 backdrop-blur">
-        <div className="mx-auto flex max-w-lg gap-2">
-          <Link href="/" className="flex h-12 w-12 items-center justify-center rounded-xl border border-gray-200 text-gray-600">←</Link>
-          <button onClick={() => setShowPay(true)} className="flex-1 rounded-xl bg-maroon-800 text-sm font-semibold text-white shadow-lg">Get My Corrected Name — ₹{BASE_PRICE} →</button>
+      {!unlocked && (
+        <div className="fixed bottom-0 left-0 right-0 border-t border-gray-200 bg-white/95 p-3 backdrop-blur">
+          <div className="mx-auto flex max-w-lg gap-2">
+            <Link href="/" className="flex h-12 w-12 items-center justify-center rounded-xl border border-gray-200 text-gray-600">←</Link>
+            <button onClick={() => setShowPay(true)} className="flex-1 rounded-xl bg-maroon-800 text-sm font-semibold text-white shadow-lg">Get My Corrected Name — ₹{BASE_PRICE} →</button>
+          </div>
         </div>
-      </div>
+      )}
 
       {showPay && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center">
@@ -249,13 +352,13 @@ function ResultContent() {
               <h3 className="font-serif text-xl font-bold text-gray-900">Enter your Details</h3>
               <button onClick={() => setShowPay(false)} className="rounded-full bg-gray-100 px-3 py-1 text-sm text-gray-600">✕</button>
             </div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">WhatsApp Number * (For Report Delivery)</label>
+            <label className="mb-1 block text-sm font-medium text-gray-700">WhatsApp Number *</label>
             <input type="tel" value={wa} onChange={(e) => setWa(e.target.value)} placeholder="10-digit mobile number" className="mb-4 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-maroon-400" />
             <label className="mb-1 block text-sm font-medium text-gray-700">Email (optional)</label>
             <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" className="mb-4 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-maroon-400" />
             <label className="mb-1 block text-sm font-medium text-gray-700">Coupon Code</label>
             <div className="mb-2 flex gap-2">
-              <input type="text" value={coupon} onChange={(e) => { setCoupon(e.target.value); setCouponError(""); }} placeholder="e.g. OFF20 or FREE100" className="flex-1 rounded-xl border border-gray-200 px-4 py-3 text-sm uppercase outline-none focus:border-maroon-400" />
+              <input type="text" value={coupon} onChange={(e) => { setCoupon(e.target.value); setCouponError(""); }} placeholder="e.g. FREE100 or OFF20" className="flex-1 rounded-xl border border-gray-200 px-4 py-3 text-sm uppercase outline-none focus:border-maroon-400" />
               <button type="button" onClick={applyCoupon} className="rounded-xl bg-gray-900 px-4 text-sm font-semibold text-white">Apply</button>
             </div>
             {couponError && <p className="mb-2 text-xs text-red-600">{couponError}</p>}
@@ -280,10 +383,10 @@ function ResultContent() {
               {discount > 0 && <div className="flex justify-between text-emerald-700"><span>Discount</span><span>-₹{discount}</span></div>}
               <div className="mt-1 flex justify-between text-base font-bold text-gray-900"><span>Total</span><span>{isFree || total === 0 ? "FREE" : `₹${total}`}</span></div>
             </div>
-            <a href={wa.length >= 10 ? whatsappUrl : undefined} onClick={(e) => { if (wa.length < 10) { e.preventDefault(); alert("Please enter a valid 10-digit WhatsApp number"); } }} className="flex w-full items-center justify-center rounded-xl bg-maroon-800 py-3.5 text-sm font-semibold text-white shadow-lg">
-              {isFree || total === 0 ? "Get Free Report on WhatsApp →" : `Proceed to Pay ₹${total}/- →`}
-            </a>
-            <p className="mt-3 text-center text-[11px] text-gray-400">Report delivered on WhatsApp · Coupon codes supported</p>
+            <button type="button" disabled={paying} onClick={handlePay} className="flex w-full items-center justify-center rounded-xl bg-maroon-800 py-3.5 text-sm font-semibold text-white shadow-lg disabled:opacity-70">
+              {paying ? "Please wait..." : isFree || total === 0 ? "Unlock Free Report →" : `Pay ₹${total} with Razorpay →`}
+            </button>
+            <p className="mt-3 text-center text-[11px] text-gray-400">Report unlocks on this page · Razorpay when keys are set</p>
           </div>
         </div>
       )}
