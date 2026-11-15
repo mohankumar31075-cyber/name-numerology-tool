@@ -1,6 +1,10 @@
 /**
  * Chaldean Numerology Engine
+ * Aligns with commercial tools (AskNumeroAI / Cheiro):
+ * - Method 1: raw sum of all letters
+ * - Method 2 (Cheiro official): reduce each name part, then sum parts
  */
+
 export const CHALDEAN_MAP: Record<string, number> = {
   A: 1, I: 1, J: 1, Q: 1, Y: 1,
   B: 2, K: 2, R: 2,
@@ -26,7 +30,15 @@ export function reduceToSingleDigit(n: number): number {
   return reduceNumber(n, false);
 }
 
-export function getNameNumber(name: string) {
+function letterSum(text: string): number {
+  const clean = text.toUpperCase().replace(/[^A-Z]/g, "");
+  let compound = 0;
+  for (const letter of clean) compound += CHALDEAN_MAP[letter] ?? 0;
+  return compound;
+}
+
+/** Method 1: raw sum of entire name */
+export function getNameNumberMethod1(name: string) {
   const clean = name.toUpperCase().replace(/[^A-Z]/g, "");
   const letterBreakdown: { letter: string; value: number }[] = [];
   let compound = 0;
@@ -35,13 +47,40 @@ export function getNameNumber(name: string) {
     letterBreakdown.push({ letter, value });
     compound += value;
   }
-  return { compound, nameNumber: reduceToSingleDigit(compound), letterBreakdown };
+  return { compound, nameNumber: reduceToSingleDigit(compound), letterBreakdown, method: "raw" as const };
+}
+
+/** Method 2 (Cheiro): reduce each name part to single digit, then add parts */
+export function getNameNumberMethod2(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  const partDetails = parts.map((p) => {
+    const compound = letterSum(p);
+    const single = reduceToSingleDigit(compound);
+    return { part: p, compound, single };
+  });
+  const compound = partDetails.reduce((s, p) => s + p.single, 0);
+  const letterBreakdown: { letter: string; value: number }[] = [];
+  for (const p of parts) {
+    for (const letter of p.toUpperCase().replace(/[^A-Z]/g, "")) {
+      letterBreakdown.push({ letter, value: CHALDEAN_MAP[letter] ?? 0 });
+    }
+  }
+  return {
+    compound,
+    nameNumber: reduceToSingleDigit(compound),
+    letterBreakdown,
+    partDetails,
+    method: "cheiro" as const,
+  };
+}
+
+/** Default name number uses Method 1 (full letter tiles UI) */
+export function getNameNumber(name: string) {
+  return getNameNumberMethod1(name);
 }
 
 export function getNameDestiny(name: string) {
-  const clean = name.toUpperCase().replace(/[^A-Z]/g, "");
-  let compound = 0;
-  for (const letter of clean) compound += CHALDEAN_MAP[letter] ?? 0;
+  const compound = letterSum(name);
   return { compound, destiny: reduceNumber(compound, true) };
 }
 
@@ -83,8 +122,6 @@ export function getSubconsciousSelf(name: string) {
   return count === 0 ? 1 : reduceNumber(count, false);
 }
 
-export type CompatibilityStatus = "excellent" | "good" | "average" | "needs_attention";
-
 export function getCompatibility(nameNumber: number, lifePath: number) {
   const singleName = reduceToSingleDigit(nameNumber);
   const singleLife = reduceToSingleDigit(lifePath);
@@ -101,8 +138,13 @@ export function getCompatibility(nameNumber: number, lifePath: number) {
   return { status: "needs_attention" as const, score: 40, message: "Mismatch — name correction recommended.", hasIssue: true, currentStrength: 48, correctedStrength: 90 };
 }
 
-export function suggestTargetVibration(_lifePath: number): number {
-  return 6;
+/** Prefer numbers friendly to life path; default target 6 (Venus) for wealth/harmony theme */
+export function suggestTargetVibration(lifePath: number): number {
+  const single = reduceToSingleDigit(lifePath);
+  const preferred: Record<number, number> = {
+    1: 1, 2: 2, 3: 6, 4: 6, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9,
+  };
+  return preferred[single] ?? 6;
 }
 
 export function getCorrectedNameTease(fullName: string) {
@@ -119,6 +161,7 @@ export function getCorrectedNameTease(fullName: string) {
   };
 }
 
+/** Generate alternate spellings aiming for target vibration (AskNumeroAI-style correction) */
 export function generateCorrectedNames(fullName: string, targetVibration: number) {
   const parts = fullName.trim().split(/\s+/).filter(Boolean);
   if (!parts.length) return [];
@@ -131,14 +174,27 @@ export function generateCorrectedNames(fullName: string, targetVibration: number
       variants.add(first.slice(0, i + 1) + ch.toLowerCase() + first.slice(i + 1));
     }
   }
-  for (const end of ["a", "h", "an", "aa", "i"]) variants.add(first + end);
-  const results: { spelling: string; nameNumber: number; compound: number }[] = [];
+  for (const end of ["a", "h", "an", "aa", "i", "ya"]) variants.add(first + end);
+  for (const pre of ["Sri", "A"]) {
+    if (!first.toLowerCase().startsWith(pre.toLowerCase())) variants.add(pre + first);
+  }
+  const results: { spelling: string; nameNumber: number; compound: number; cheiroNumber: number }[] = [];
   for (const v of variants) {
     const full = restStr ? `${v} ${restStr}` : v;
-    const n = getNameNumber(full);
-    results.push({ spelling: full.replace(/\s+/g, " ").trim(), nameNumber: n.nameNumber, compound: n.compound });
+    const n1 = getNameNumberMethod1(full);
+    const n2 = getNameNumberMethod2(full);
+    results.push({
+      spelling: full.replace(/\s+/g, " ").trim(),
+      nameNumber: n1.nameNumber,
+      compound: n1.compound,
+      cheiroNumber: n2.nameNumber,
+    });
   }
-  results.sort((a, b) => Math.abs(a.nameNumber - targetVibration) - Math.abs(b.nameNumber - targetVibration));
+  results.sort((a, b) => {
+    const da = Math.min(Math.abs(a.nameNumber - targetVibration), Math.abs(a.cheiroNumber - targetVibration));
+    const db = Math.min(Math.abs(b.nameNumber - targetVibration), Math.abs(b.cheiroNumber - targetVibration));
+    return da - db;
+  });
   const seen = new Set<string>();
   const out: typeof results = [];
   for (const r of results) {
@@ -151,7 +207,11 @@ export function generateCorrectedNames(fullName: string, targetVibration: number
   return out;
 }
 
-export const NUMBER_MEANINGS: Record<number, any> = {
+export const NUMBER_MEANINGS: Record<number, {
+  planet: string; title: string; short: string; keywords: string;
+  strengths: string[]; challenges: string[];
+  luckyDay: string; luckyColours: string; luckyNumbers: string;
+}> = {
   1: { planet: "Sun", title: "Leadership & Ambition", short: "The Leader.", keywords: "Leadership", strengths: ["Leadership", "Initiative", "Originality"], challenges: ["Ego", "Impatience"], luckyDay: "Sunday", luckyColours: "Gold, Orange", luckyNumbers: "1, 2, 3" },
   2: { planet: "Moon", title: "Harmony & Diplomacy", short: "The Peacemaker.", keywords: "Diplomacy", strengths: ["Diplomacy", "Intuition"], challenges: ["Sensitivity"], luckyDay: "Monday", luckyColours: "White, Silver", luckyNumbers: "2, 7" },
   3: { planet: "Jupiter", title: "Creativity & Expression", short: "The Communicator.", keywords: "Creativity", strengths: ["Expression", "Optimism"], challenges: ["Scattered energy"], luckyDay: "Thursday", luckyColours: "Yellow, Purple", luckyNumbers: "3, 6, 9" },
@@ -172,6 +232,7 @@ function meaningOf(n: number) {
 export interface FullAnalysis {
   fullName: string; day: number; month: number; year: number; gender: string;
   name: ReturnType<typeof getNameNumber>;
+  nameCheiro: ReturnType<typeof getNameNumberMethod2>;
   destiny: ReturnType<typeof getNameDestiny>;
   lifePath: ReturnType<typeof getLifePath>;
   psychic: number;
@@ -187,6 +248,7 @@ export interface FullAnalysis {
 
 export function analyzeName(fullName: string, day: number, month: number, year: number, gender: string): FullAnalysis {
   const name = getNameNumber(fullName);
+  const nameCheiro = getNameNumberMethod2(fullName);
   const destiny = getNameDestiny(fullName);
   const lifePath = getLifePath(day, month, year);
   const psychic = getPsychicNumber(day);
@@ -199,7 +261,7 @@ export function analyzeName(fullName: string, day: number, month: number, year: 
   correctedTease.targetVibration = targetVibration;
   correctedTease.targetTitle = meaningOf(targetVibration).title;
   return {
-    fullName, day, month, year, gender, name, destiny, lifePath, psychic, soulUrge, personality, subconscious,
+    fullName, day, month, year, gender, name, nameCheiro, destiny, lifePath, psychic, soulUrge, personality, subconscious,
     compatibility, nameMeaning: meaningOf(name.nameNumber), lifePathMeaning: meaningOf(lifePath.lifePath),
     correctedTease, targetVibration,
   };
