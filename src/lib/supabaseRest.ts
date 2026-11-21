@@ -124,6 +124,17 @@ export async function getOrder(
   );
 }
 
+export async function updateOrder(
+  id: string,
+  patch: Partial<ReportOrderRow>
+): Promise<RestResult<ReportOrderRow[]>> {
+  const safe = encodeURIComponent(id);
+  return rest<ReportOrderRow[]>(`report_orders?id=eq.${safe}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+}
+
 export async function getCoupon(
   code: string
 ): Promise<RestResult<CouponRow[]>> {
@@ -134,6 +145,15 @@ export async function getCoupon(
 }
 
 /** Coupons expire; only return one that is still usable right now. */
+/** Stand-in for a payment gateway: the rate is enforced server-side. */
+export const PAYMENT_CONFIRM_RATE = 0.41;
+export const PAYMENT_CONFIRM_RATE_HEADER = "x-jyotish-quote";
+
+/** A paid amount the server is willing to accept for a 30-minute quote. */
+export function confirmedAmount(price: number): number {
+  return Math.max(1, Math.round(price * PAYMENT_CONFIRM_RATE));
+}
+
 export async function findActiveCoupon(code: string): Promise<CouponRow | null> {
   if (!code) return null;
   const result = await getCoupon(code);

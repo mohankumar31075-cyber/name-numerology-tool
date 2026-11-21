@@ -29,7 +29,7 @@ type FullReport = {
   source: string;
 };
 
-type Phase = "details" | "coupon" | "pay" | "ready" | "delivered";
+type Phase = "details" | "coupon" | "pay" | "ready" | "created";
 
 function inr(n: number) {
   return new Intl.NumberFormat("en-IN", {
@@ -59,6 +59,13 @@ export default function CheckoutDialog({
   const [couponError, setCouponError] = useState("");
   const [quote, setQuote] = useState<Quote | null>(null);
   const [report, setReport] = useState<FullReport | null>(null);
+  const [created, setCreated] = useState<{
+    order: { id: string; paymentStatus: string };
+    price: number;
+    reportUrl: string;
+    free?: boolean;
+  } | null>(null);
+  const [paidAmount, setPaidAmount] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
@@ -196,15 +203,77 @@ export default function CheckoutDialog({
     setPhase("coupon");
   }
 
-  function payHandOff() {
-    const url = quote?.whatsappUrl;
-    window.open(url || `https://wa.me/919008831075`, "_blank", "noopener,noreferrer");
-    setPhase("pay");
+  function openWhatsApp(url: string | undefined) {
+    window.open(
+      url || "https://wa.me/919008831075",
+      "_blank",
+      "noopener,noreferrer"
+    );
   }
 
-  function confirmPaid() {
-    setToast("Thanks! Send us the payment screenshot on WhatsApp and we'll unlock your report.");
-    setPhase("delivered");
+  async function createOrder() {
+    setBusy(true);
+    setError("");
+    try {
+      const res = await fetch("/api/report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "create",
+          ...details,
+          coupon: quote?.coupon ?? coupon.trim().toUpperCase(),
+          email,
+          whatsapp,
+          source: "home-checkout",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        setError(data.error || "Could not create your order.");
+        return;
+      }
+      setCreated(data);
+
+      // A 100% coupon needs no payment — the report is ready in the page.
+      if (data.free && data.report) {
+        setReport(data.report as FullReport);
+        setPhase("ready");
+        return;
+      }
+      setPhase("created");
+    } catch {
+      setError("Network error while creating your order.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmPaid() {
+    if (!created?.order?.id) return;
+    setBusy(true);
+    setError("");
+    try {
+      const res = await fetch("/api/report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "confirm-paid",
+          orderId: created.order.id,
+          paidAmount: Number(paidAmount),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        // Never dead-end: the customer keeps the WhatsApp route either way.
+        setError(data.error || "Could not confirm that payment.");
+        return;
+      }
+      window.location.assign(data.reportUrl || `/report/${created.order.id}`);
+    } catch {
+      setError("Network error while confirming payment.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   if (!open) return null;
@@ -370,40 +439,30 @@ export default function CheckoutDialog({
             <div className="rounded-xl border border-gold-300/30 bg-gold-300/[0.05] px-4 py-3">
               <div className="flex items-center justify-between text-sm text-ink-100">
                 <span>Amount due</span>
-                <strong className="text-lg text-gold-300">{inr(quote.price)}</strong>
+                <strong className="text-lg text-gold-300">
+                  {inr(quote.price)}
+                </strong>
               </div>
-              {quote.upiLink && (
-                <a
-                  href={quote.upiLink}
-                  className="mt-3 block rounded-[9px] bg-white/10 py-2.5 text-center text-sm font-semibold text-ink-50 transition hover:bg-white/15"
-                >
-                  Pay {inr(quote.price)} with UPI
-                </a>
+              {quote.discountPercent > 0 && (
+                <p className="mt-1 text-[11px] text-gold-200">
+                  {quote.couponLabel || quote.coupon} applied ·{" "}
+                  {quote.discountPercent}% off
+                </p>
               )}
-              <p className="mt-2 text-[11px] text-ink-300">
-                Reference: {quote.reference.slice(0, 8).toUpperCase()}
-              </p>
             </div>
 
             <p className="text-xs leading-relaxed text-ink-200">
-              After paying, message us on WhatsApp with your payment screenshot.
-              Your full report is prepared and sent in{" "}
-              {languageNative(details.language)}.
+              Continue to create your order. You&apos;ll get a report page you
+              can return to, plus a UPI / WhatsApp payment route.
             </p>
 
             <button
               type="button"
-              onClick={payHandOff}
-              className="w-full rounded-[11px] bg-green-600 py-3 text-sm font-bold text-white transition hover:bg-green-500"
+              onClick={createOrder}
+              disabled={busy}
+              className="w-full rounded-[11px] bg-gold-cta py-3 text-sm font-bold text-[#20180e] transition hover:brightness-105 disabled:opacity-70"
             >
-              Continue on WhatsApp →
-            </button>
-            <button
-              type="button"
-              onClick={confirmPaid}
-              className="w-full rounded-[11px] bg-gold-cta py-3 text-sm font-bold text-[#20180e] transition hover:brightness-105"
-            >
-              I have paid — unlock my report
+              {busy ? "Creating your order…" : `Continue · ${inr(quote.price)}`}
             </button>
             <button
               type="button"
@@ -415,25 +474,35 @@ export default function CheckoutDialog({
           </div>
         )}
 
-        {phase === "delivered" && (
+        {phase === "created" && created && (
           <div className="space-y-3">
             <div className="rounded-xl border border-mint-400/30 bg-mint-400/[0.07] px-4 py-3 text-sm text-ink-100">
-              Your payment is being confirmed. Our team will send your complete
-              report on WhatsApp and email shortly.
+              Order created · reference{" "}
+              <strong className="text-mint-400">
+                {created.order.id.slice(0, 8).toUpperCase()}
+              </strong>
+              . Your report is prepared and waiting on the report page.
             </div>
+
+            <p className="text-xs leading-relaxed text-ink-200">
+              After paying, open your report page and enter the amount — it
+              unlocks there instantly. You can also send the screenshot on
+              WhatsApp.
+            </p>
+
             <a
-              href={
-                quote?.whatsappUrl ||
-                `https://wa.me/919008831075?text=${encodeURIComponent(
-                  "Hi, I have paid for my report."
-                )}`
-              }
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block rounded-[11px] bg-green-600 py-3 text-center text-sm font-bold text-white transition hover:bg-green-500"
+              href={created.reportUrl}
+              className="block rounded-[11px] bg-gold-cta py-3 text-center text-sm font-bold text-[#20180e] transition hover:brightness-105"
             >
-              Open WhatsApp →
+              View my report →
             </a>
+            <button
+              type="button"
+              onClick={() => openWhatsApp(quote?.whatsappUrl)}
+              className="w-full rounded-[11px] bg-green-600 py-3 text-sm font-bold text-white transition hover:bg-green-500"
+            >
+              Send payment screenshot on WhatsApp
+            </button>
             <button
               type="button"
               onClick={onClose}

@@ -6,6 +6,7 @@ import {
   buildPanchangWhatsApp,
   languageName,
 } from "@/lib/premium";
+import { buildStructuredReport, type StructuredReport } from "@/lib/reportSections";
 import {
   BASE_REPORT_PRICE,
   isReportType,
@@ -15,9 +16,15 @@ import {
   type BirthDetailsInput,
 } from "@/lib/report";
 import {
+  confirmedAmount,
   findActiveCoupon,
   getOrder,
+  insertOrder,
+  PAYMENT_CONFIRM_RATE,
+  PAYMENT_CONFIRM_RATE_HEADER,
   supabaseConfigured,
+  updateOrder,
+  type ReportOrderRow,
 } from "@/lib/supabaseRest";
 
 export const runtime = "nodejs";
@@ -25,6 +32,8 @@ export const maxDuration = 60;
 
 const WA_NUMBER = process.env.WHATSAPP_NUMBER || "919008831075";
 const UPI_ID = process.env.UPI_ID || "";
+
+/* ------------------------------------------------------------------ helpers */
 
 function clean(value: unknown, max: number): string {
   return String(value ?? "").trim().slice(0, max);
@@ -68,16 +77,29 @@ function readBirth(body: Record<string, unknown>): BirthDetailsInput | null {
   return input;
 }
 
-async function composeReport(input: BirthDetailsInput) {
+function inputFromOrder(order: ReportOrderRow): BirthDetailsInput {
+  return {
+    reportType: order.report_type,
+    fullName: order.full_name,
+    birthDate: order.birth_date ?? "",
+    birthTime: order.birth_time ? order.birth_time.slice(0, 5) : "",
+    birthPlace: order.birth_place ?? "Bengaluru, India",
+    language: (REPORT_LANGUAGES.some((l) => l.code === order.language)
+      ? order.language
+      : "en") as BirthDetailsInput["language"],
+    gender: order.gender ?? "",
+  };
+}
+
+/** The flat WhatsApp text that the WhatsApp button opens. */
+async function composeWhatsAppText(input: BirthDetailsInput) {
   if (input.reportType === "numerology") {
     return { whatsappText: buildNumerologyReport(input), source: "chaldean" };
   }
-
   if (input.reportType === "panchang") {
     const result = await buildPanchangWhatsApp(input);
     return { whatsappText: result.whatsappText, source: result.source };
   }
-
   const date = parseBirthDate(input.birthDate)!;
   const time = parseBirthTime(input.birthTime) ?? { hour: 12, minute: 0 };
   const report = await buildFullReport({
@@ -95,13 +117,34 @@ async function composeReport(input: BirthDetailsInput) {
   return { whatsappText: report.whatsappText, source: "mcp" };
 }
 
+async function fullReportPayload(input: BirthDetailsInput) {
+  const structured: StructuredReport = buildStructuredReport(input);
+  const flat = await composeWhatsAppText(input);
+  return {
+    structured,
+    whatsappText: flat.whatsappText,
+    whatsappUrl: whatsappUrl(flat.whatsappText),
+    source: flat.source,
+  };
+}
+
+function priceFor(discountPercent: number) {
+  return Math.max(0, Math.round(BASE_REPORT_PRICE * (1 - discountPercent / 100)));
+}
+
+/* ---------------------------------------------------------------------- POST */
+
 /**
  * POST /api/report
- * Body: { action?: "quote" | "generate", ...birth details, coupon?, orderId?, paid? }
  *
- * - orderId only          → fetch the status (and, once paid, the full report) of that order
- * - action "quote"        → price for a coupon + the UPI / WhatsApp hand-off links
- * - action "generate"     → return the full report when the order is free (100% coupon) or `paid: true`
+ * Body is one of:
+ *   { action: "create", ...birth details, coupon?, email?, whatsapp?, leadId? }
+ *   { action: "quote",  ...birth details, coupon? }
+ *   { action: "generate", ...birth details, coupon?, paid? }
+ *   { action: "pay-intent", orderId, email?, whatsapp? }
+ *   { action: "confirm-paid", orderId, paidAmount }
+ *   { action: "generate-for-order", orderId }
+ *   { action: "status", orderId }            (alias of GET below)
  */
 export async function POST(req: NextRequest) {
   let body: Record<string, unknown>;
@@ -112,16 +155,16 @@ export async function POST(req: NextRequest) {
   }
 
   const action = String(body.action ?? "quote");
-
-  // ---- Existing order lookup ------------------------------------------------
   const orderId = clean(body.orderId, 64);
+
+  /* ---------------------------------------------------------- order actions */
   if (orderId) {
     if (!/^[0-9a-fA-F-]{36}$/.test(orderId)) {
       return NextResponse.json({ ok: false, error: "Invalid order id" }, { status: 400 });
     }
     if (!supabaseConfigured()) {
       return NextResponse.json(
-        { ok: false, error: "Order lookup is not configured yet." },
+        { ok: false, error: "Orders are not configured yet." },
         { status: 503 }
       );
     }
@@ -133,141 +176,308 @@ export async function POST(req: NextRequest) {
     if (!order) {
       return NextResponse.json({ ok: false, error: "Order not found" }, { status: 404 });
     }
+    const input = inputFromOrder(order);
+    const reportUrl = `/report/${order.id}`;
 
-    const orderInput: BirthDetailsInput = {
-      reportType: order.report_type,
-      fullName: order.full_name,
-      birthDate: order.birth_date ?? "",
-      birthTime: order.birth_time ? order.birth_time.slice(0, 5) : "",
-      birthPlace: order.birth_place ?? "Bengaluru, India",
-      language: (REPORT_LANGUAGES.some((l) => l.code === order.language)
-        ? order.language
-        : "en") as BirthDetailsInput["language"],
-      gender: order.gender ?? "",
-    };
+    if (action === "status") {
+      return NextResponse.json({
+        ok: true,
+        order: serializeOrder(order),
+        reportUrl,
+      });
+    }
 
-    const paid = order.payment_status === "paid";
-    const report = paid ? await composeReport(orderInput) : null;
+    if (action === "pay-intent") {
+      const email = clean(body.email, 160);
+      const whatsapp = clean(body.whatsapp, 20);
+      const patch: Partial<ReportOrderRow> = { payment_status: "pending" };
+      if (email) patch.contact_email = email;
+      if (whatsapp) patch.whatsapp_number = whatsapp;
+      await updateOrder(order.id, patch);
 
-    return NextResponse.json({
-      ok: true,
-      order: {
-        id: order.id,
-        paymentStatus: order.payment_status,
-        language: order.language,
-        languageLabel: languageName(order.language),
-        reportType: order.report_type,
-        fullName: order.full_name,
-        birthDate: order.birth_date,
-        birthPlace: order.birth_place,
-        couponCode: order.coupon_code,
-      },
-      report: report
-        ? {
-            ...report,
-            whatsappUrl: whatsappUrl(report.whatsappText),
-          }
-        : null,
-    });
-  }
+      const amount = order.report_type === "panchang" ? 149 : BASE_REPORT_PRICE;
+      return NextResponse.json({
+        ok: true,
+        order: { ...serializeOrder(order), paymentStatus: "pending" },
+        payment: {
+          amount,
+          currency: "INR",
+          reference: order.id.slice(0, 8).toUpperCase(),
+          upiLink: upiUrl(amount, `Jyotish One ${order.report_type} report`, order.id),
+          upiIdConfigured: Boolean(UPI_ID),
+          confirmHeader: PAYMENT_CONFIRM_RATE_HEADER,
+          confirmAmount: confirmedAmount(amount),
+          rate: PAYMENT_CONFIRM_RATE,
+        },
+        reportUrl,
+      });
+    }
 
-  // ---- Fresh quote / generation --------------------------------------------
-  const input = readBirth(body);
-  if (!input) {
+    if (action === "confirm-paid") {
+      const amount = Number(body.paidAmount);
+      const expected = confirmedAmount(
+        order.report_type === "panchang" ? 149 : BASE_REPORT_PRICE
+      );
+      if (!Number.isFinite(amount) || amount < expected) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error:
+              "We could not match that payment. Message us on WhatsApp with your screenshot and we will unlock it manually.",
+          },
+          { status: 402 }
+        );
+      }
+      const updated = await updateOrder(order.id, { payment_status: "paid" });
+      if (!updated.ok) {
+        return NextResponse.json({ ok: false, error: updated.error }, { status: 500 });
+      }
+      return NextResponse.json({
+        ok: true,
+        order: { ...serializeOrder(order), paymentStatus: "paid" },
+        reportUrl,
+      });
+    }
+
+    if (action === "generate-for-order") {
+      if (order.payment_status !== "paid") {
+        return NextResponse.json(
+          { ok: false, error: "This report has not been paid for yet.", paymentStatus: order.payment_status },
+          { status: 402 }
+        );
+      }
+      const report = await fullReportPayload(input);
+      return NextResponse.json({ ok: true, order: serializeOrder(order), report });
+    }
+
     return NextResponse.json(
-      {
-        ok: false,
-        error: "Name, a valid date of birth and birth place are required.",
-      },
+      { ok: false, error: `Unknown order action "${action}"` },
       { status: 400 }
     );
   }
 
-  const couponCode = clean(body.coupon, 32).toUpperCase();
-  let discountPercent = 0;
-  let couponLabel: string | null = null;
-  if (couponCode) {
-    const coupon = await findActiveCoupon(couponCode);
-    if (!coupon) {
+  /* ------------------------------------------------------- create an order */
+  if (action === "create") {
+    const input = readBirth(body);
+    if (!input) {
       return NextResponse.json(
-        { ok: false, error: "That coupon is not valid or has expired." },
+        { ok: false, error: "Name, a valid date of birth and birth place are required." },
         { status: 400 }
       );
     }
-    discountPercent = coupon.discount_percent;
-    couponLabel = coupon.label;
+    if (!supabaseConfigured()) {
+      return NextResponse.json(
+        { ok: false, error: "Order storage is not configured yet." },
+        { status: 503 }
+      );
+    }
+
+    const couponCode = clean(body.coupon, 32).toUpperCase();
+    let discountPercent = 0;
+    if (couponCode) {
+      const coupon = await findActiveCoupon(couponCode);
+      if (!coupon) {
+        return NextResponse.json(
+          { ok: false, error: "That coupon is not valid or has expired." },
+          { status: 400 }
+        );
+      }
+      discountPercent = coupon.discount_percent;
+    }
+    const price = priceFor(discountPercent);
+    const isFree = price === 0;
+
+    const created = await insertOrder({
+      report_type: input.reportType,
+      full_name: input.fullName,
+      birth_date: input.birthDate || null,
+      birth_time: input.birthTime || null,
+      birth_place: input.birthPlace,
+      language: input.language,
+      gender: input.gender || null,
+      contact_email: clean(body.email, 160) || null,
+      whatsapp_number: clean(body.whatsapp, 20) || null,
+      consented_at: new Date().toISOString(),
+      payment_status: isFree ? "paid" : "preview",
+      coupon_code: couponCode || null,
+      source: clean(body.source, 40) || "checkout",
+    });
+
+    if (!created.ok) {
+      return NextResponse.json({ ok: false, error: created.error }, { status: 500 });
+    }
+    const order = Array.isArray(created.data) ? created.data[0] : created.data;
+    if (!order?.id) {
+      return NextResponse.json(
+        { ok: false, error: "Order was created but no id came back." },
+        { status: 500 }
+      );
+    }
+
+    // A 100% coupon means there is nothing to pay: hand the report over now.
+    if (isFree) {
+      const report = await fullReportPayload(input);
+      return NextResponse.json({
+        ok: true,
+        free: true,
+        order: serializeOrder(order),
+        price,
+        reportUrl: `/report/${order.id}`,
+        report,
+      });
+    }
+
+    return NextResponse.json({
+      ok: true,
+      free: false,
+      order: serializeOrder(order),
+      price,
+      discountPercent,
+      reportUrl: `/report/${order.id}`,
+    });
   }
 
-  const price = Math.max(
-    0,
-    Math.round(BASE_REPORT_PRICE * (1 - discountPercent / 100))
+  /* ------------------------------------------------------------ quote only */
+  if (action === "quote") {
+    const input = readBirth(body);
+    if (!input) {
+      return NextResponse.json(
+        { ok: false, error: "Name, a valid date of birth and birth place are required." },
+        { status: 400 }
+      );
+    }
+    const couponCode = clean(body.coupon, 32).toUpperCase();
+    let discountPercent = 0;
+    let couponLabel: string | null = null;
+    if (couponCode) {
+      const coupon = await findActiveCoupon(couponCode);
+      if (!coupon) {
+        return NextResponse.json(
+          { ok: false, error: "That coupon is not valid or has expired." },
+          { status: 400 }
+        );
+      }
+      discountPercent = coupon.discount_percent;
+      couponLabel = coupon.label;
+    }
+    const price = priceFor(discountPercent);
+    const reference = randomUUID();
+    return NextResponse.json({
+      ok: true,
+      quote: {
+        basePrice: BASE_REPORT_PRICE,
+        discountPercent,
+        coupon: couponCode || null,
+        couponLabel,
+        price,
+        isFree: price === 0,
+        currency: "INR",
+        upiIdConfigured: Boolean(UPI_ID),
+        upiLink: upiUrl(price, `Jyotish One ${input.reportType} report`, reference),
+        reference,
+        whatsappUrl: whatsappUrl(
+          [
+            `Hi, I'd like the full ${input.reportType} report.`,
+            ``,
+            `Name: ${input.fullName}`,
+            input.birthDate ? `DOB: ${input.birthDate}` : null,
+            input.birthTime ? `TOB: ${input.birthTime}` : null,
+            `Place: ${input.birthPlace}`,
+            `Language: ${languageName(input.language)}`,
+            couponCode ? `Coupon: ${couponCode}` : null,
+            `Amount: ₹${price}${price === 0 ? " (FREE)" : ""}`,
+            ``,
+            `Please confirm the payment details.`,
+          ]
+            .filter(Boolean)
+            .join("\n")
+        ),
+      },
+    });
+  }
+
+  /* ------------------------------------------------ legacy direct generate */
+  if (action === "generate") {
+    const input = readBirth(body);
+    if (!input) {
+      return NextResponse.json(
+        { ok: false, error: "Name, a valid date of birth and birth place are required." },
+        { status: 400 }
+      );
+    }
+    const couponCode = clean(body.coupon, 32).toUpperCase();
+    let discountPercent = 0;
+    if (couponCode) {
+      const coupon = await findActiveCoupon(couponCode);
+      if (!coupon) {
+        return NextResponse.json(
+          { ok: false, error: "That coupon is not valid or has expired." },
+          { status: 400 }
+        );
+      }
+      discountPercent = coupon.discount_percent;
+    }
+    const price = priceFor(discountPercent);
+    if (price > 0 && body.paid !== true) {
+      return NextResponse.json(
+        { ok: false, error: "Payment is required before the full report can be generated." },
+        { status: 402 }
+      );
+    }
+    const report = await fullReportPayload(input);
+    return NextResponse.json({ ok: true, price, report });
+  }
+
+  return NextResponse.json(
+    { ok: false, error: `Unknown action "${action}".` },
+    { status: 400 }
   );
-  const isFree = price === 0;
-  const reference = randomUUID();
-  const payLink = upiUrl(
-    price,
-    `Jyotish One ${input.reportType} report`,
-    reference
-  );
-
-  const quote = {
-    basePrice: BASE_REPORT_PRICE,
-    discountPercent,
-    coupon: couponCode || null,
-    couponLabel,
-    price,
-    isFree,
-    currency: "INR",
-    upiIdConfigured: Boolean(UPI_ID),
-    upiLink: payLink,
-    reference,
-    whatsappUrl: whatsappUrl(
-      [
-        `Hi, I'd like the full ${input.reportType} report.`,
-        ``,
-        `Name: ${input.fullName}`,
-        input.birthDate ? `DOB: ${input.birthDate}` : null,
-        input.birthTime ? `TOB: ${input.birthTime}` : null,
-        `Place: ${input.birthPlace}`,
-        `Language: ${languageName(input.language)}`,
-        couponCode ? `Coupon: ${couponCode}` : null,
-        `Amount: ₹${price}${isFree ? " (FREE)" : ""}`,
-        ``,
-        `Please confirm the payment details.`,
-      ]
-        .filter(Boolean)
-        .join("\n")
-    ),
-  };
-
-  if (action !== "generate") {
-    return NextResponse.json({ ok: true, quote });
-  }
-
-  const paid = isFree || body.paid === true;
-  if (!paid) {
-    return NextResponse.json(
-      { ok: false, error: "Payment is required before the full report can be generated.", quote },
-      { status: 402 }
-    );
-  }
-
-  const report = await composeReport(input);
-  return NextResponse.json({
-    ok: true,
-    quote,
-    report: {
-      ...report,
-      whatsappUrl: whatsappUrl(report.whatsappText),
-    },
-  });
 }
 
-export async function GET() {
+/* ----------------------------------------------------------------------- GET */
+
+function serializeOrder(order: ReportOrderRow) {
+  return {
+    id: order.id,
+    reportType: order.report_type,
+    fullName: order.full_name,
+    birthDate: order.birth_date,
+    birthTime: order.birth_time,
+    birthPlace: order.birth_place,
+    language: order.language,
+    languageLabel: languageName(order.language),
+    gender: order.gender,
+    paymentStatus: order.payment_status,
+    couponCode: order.coupon_code,
+    createdAt: order.created_at,
+  };
+}
+
+/** GET /api/report?orderId=…  → order status (used by the report page). */
+export async function GET(req: NextRequest) {
+  const orderId = clean(req.nextUrl.searchParams.get("orderId"), 64);
+  if (!orderId) {
+    return NextResponse.json({
+      ok: true,
+      help: "POST { action: create|quote|generate|pay-intent|confirm-paid|generate-for-order, ... } or GET ?orderId=…",
+      currency: "INR",
+      basePrice: BASE_REPORT_PRICE,
+    });
+  }
+  if (!/^[0-9a-fA-F-]{36}$/.test(orderId) || !supabaseConfigured()) {
+    return NextResponse.json({ ok: false, error: "Order lookup unavailable" }, { status: 400 });
+  }
+  const found = await getOrder(orderId);
+  if (!found.ok) {
+    return NextResponse.json({ ok: false, error: found.error }, { status: 500 });
+  }
+  const order = found.data?.[0];
+  if (!order) {
+    return NextResponse.json({ ok: false, error: "Order not found" }, { status: 404 });
+  }
   return NextResponse.json({
     ok: true,
-    help: "POST { action: quote|generate, reportType, fullName, birthDate, birthTime, birthPlace, language, gender, coupon? } or { orderId }",
-    currency: "INR",
-    basePrice: BASE_REPORT_PRICE,
+    order: serializeOrder(order),
+    reportUrl: `/report/${order.id}`,
   });
 }
