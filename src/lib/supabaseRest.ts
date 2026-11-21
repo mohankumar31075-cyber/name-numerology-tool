@@ -87,6 +87,7 @@ export type ReportOrderRow = {
   life_path: number | null;
   psychic_number: number | null;
   source: string;
+  payment_reference: string | null;
   consented_at: string | null;
   created_at: string;
   updated_at: string;
@@ -113,6 +114,13 @@ export async function insertOrder(
   row: Partial<ReportOrderRow>
 ): Promise<RestResult<ReportOrderRow[]>> {
   return insertLead(row);
+}
+
+/** Newest first, for the owner's payment queue. */
+export async function listOrders(limit = 80): Promise<RestResult<ReportOrderRow[]>> {
+  return rest<ReportOrderRow[]>(
+    `report_orders?select=*&order=created_at.desc&limit=${limit}`
+  );
 }
 
 export async function getOrder(
@@ -146,14 +154,6 @@ export async function getCoupon(
 
 /** Coupons expire; only return one that is still usable right now. */
 /** Stand-in for a payment gateway: the rate is enforced server-side. */
-export const PAYMENT_CONFIRM_RATE = 0.41;
-export const PAYMENT_CONFIRM_RATE_HEADER = "x-jyotish-quote";
-
-/** A paid amount the server is willing to accept for a 30-minute quote. */
-export function confirmedAmount(price: number): number {
-  return Math.max(1, Math.round(price * PAYMENT_CONFIRM_RATE));
-}
-
 export async function findActiveCoupon(code: string): Promise<CouponRow | null> {
   if (!code) return null;
   const result = await getCoupon(code);

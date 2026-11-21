@@ -16,8 +16,7 @@ type Payment = {
   reference: string;
   upiLink: string | null;
   upiIdConfigured: boolean;
-  confirmHeader: string;
-  confirmAmount: number;
+  whatsappUrl: string;
 };
 
 function inr(n: number) {
@@ -131,8 +130,9 @@ export default function ReportView({
   const [payment, setPayment] = useState<Payment | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [paidAmount, setPaidAmount] = useState("");
-  const [verifying, setVerifying] = useState(false);
+  const [paymentReference, setPaymentReference] = useState("");
+  const [claiming, setClaiming] = useState(false);
+  const [claimed, setClaimed] = useState(false);
   const [paidNow, setPaidNow] = useState(paid);
 
   const loadReport = useCallback(async () => {
@@ -176,37 +176,54 @@ export default function ReportView({
     else void loadPayment();
   }, [paidNow, loadReport, loadPayment]);
 
-  async function confirmPaid() {
-    setVerifying(true);
+  /* While locked, poll the order so the page unlocks on its own the moment the
+     owner confirms the payment — the customer does not have to refresh. */
+  useEffect(() => {
+    if (paidNow) return;
+    const timer = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/report?orderId=${orderId}`, { cache: "no-store" });
+        const data = await res.json();
+        if (data?.ok && data.order?.paymentStatus === "paid") setPaidNow(true);
+      } catch {
+        /* keep the page usable offline; the next tick retries */
+      }
+    }, 20000);
+    return () => clearInterval(timer);
+  }, [paidNow, orderId]);
+
+  async function claimPaid() {
+    setClaiming(true);
     setError("");
     try {
       const res = await fetch("/api/report", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "confirm-paid",
+          action: "claim-paid",
           orderId,
-          paidAmount: Number(paidAmount),
+          paymentReference,
         }),
       });
       const data = await res.json();
       if (!res.ok || !data.ok) {
-        setError(data.error || "Could not confirm that payment.");
+        setError(data.error || "Could not record that payment reference.");
         return;
       }
-      setPaidNow(true);
+      setClaimed(true);
+      /* the poll above picks this up within 20s */
     } catch {
-      setError("Network error while confirming payment.");
+      setError("Network error while submitting your payment reference.");
     } finally {
-      setVerifying(false);
+      setClaiming(false);
     }
   }
 
-  const waPayment = `https://wa.me/919008831075?text=${encodeURIComponent(
-    `Hi, I have paid for my ${reportType} report.\nReference: ${reference}\n${
-      paidAmount ? `Amount paid: ₹${paidAmount}\n` : ""
-    }Please unlock my report.`
-  )}`;
+  const waPayment =
+    payment?.whatsappUrl ??
+    `https://wa.me/919008831075?text=${encodeURIComponent(
+      `Hi, I have paid for my ${reportType} report.\nReference: ${reference}\nPlease unlock my report.`
+    )}`;
 
   /* ------------------------------------------------------------- locked view */
   if (!paidNow) {
@@ -215,67 +232,91 @@ export default function ReportView({
         <div className="rounded-[18px] border border-gold-300/30 bg-gold-300/[0.06] px-5 py-4">
           <p className="font-serif text-lg text-ink-50">Payment pending</p>
           <p className="mt-1 text-[13px] leading-relaxed text-ink-200">
-            Your report is prepared but locked. Complete the payment
-            {payment ? ` of ${inr(payment.amount)}` : ""} and it will unlock here
-            instantly — no need to wait for WhatsApp.
+            Your report is ready and waiting. Pay
+            {payment ? ` ${inr(payment.amount)}` : ""} using the button below —
+            we verify it and unlock this page.
           </p>
-          {payment?.upiLink && (
+          {payment?.upiLink ? (
             <a
               href={payment.upiLink}
-              className="mt-3 block rounded-[9px] bg-white/10 py-2.5 text-center text-sm font-semibold text-ink-50 transition hover:bg-white/15"
+              className="mt-3 block rounded-[9px] bg-gold-cta py-2.5 text-center text-sm font-bold text-[#20180e] transition hover:brightness-105"
             >
               Pay {inr(payment.amount)} with UPI
             </a>
+          ) : (
+            <a
+              href={payment?.whatsappUrl ?? waPayment}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-3 block rounded-[9px] bg-green-600 py-2.5 text-center text-sm font-bold text-white transition hover:bg-green-500"
+            >
+              Get payment details on WhatsApp
+            </a>
           )}
-          <p className="mt-2 text-[11px] text-ink-300">
-            Reference: {reference}
-            {payment ? ` · ${payment.confirmHeader}: ${payment.confirmAmount}` : ""}
-          </p>
+          <p className="mt-2 text-[11px] text-ink-300">Reference: {reference}</p>
         </div>
 
         <div className="rounded-[18px] border border-white/10 bg-white/[0.03] px-5 py-4">
           <p className="text-sm font-semibold text-ink-50">
-            Already paid? Confirm it here
+            {claimed ? "We have your payment reference" : "Already paid? Tell us"}
           </p>
-          <p className="mt-1 text-[12px] leading-relaxed text-ink-300">
-            {payment?.upiIdConfigured
-              ? `Enter the amount you paid (${inr(payment.amount)}). We verify it before unlocking.`
-              : "Paid us by UPI or bank transfer? Enter the amount you sent and we'll verify it before unlocking."}
-          </p>
-          <div className="mt-3 flex gap-2">
-            <input
-              inputMode="numeric"
-              value={paidAmount}
-              onChange={(e) => {
-                setPaidAmount(e.target.value.replace(/[^\d]/g, ""));
-                setError("");
-              }}
-              placeholder={
-                payment ? `Amount paid (e.g. ${payment.amount})` : "Amount paid (₹)"
-              }
-              aria-label="Amount paid in rupees"
-              className="flex-1 rounded-[10px] border border-ink-500 bg-[#10121f] px-3.5 py-2.5 text-sm text-ink-50 outline-none focus:border-gold-300"
-            />
-            <button
-              type="button"
-              onClick={confirmPaid}
-              disabled={verifying || !paidAmount}
-              className="rounded-[10px] bg-gold-cta px-4 text-sm font-bold text-[#20180e] transition hover:brightness-105 disabled:opacity-60"
-            >
-              {verifying ? "Checking…" : "Unlock"}
-            </button>
-          </div>
+          {claimed ? (
+            <>
+              <p className="mt-1 text-[12px] leading-relaxed text-ink-200">
+                Thank you. We&apos;re matching your payment now — this page
+                unlocks as soon as it clears, and we&apos;ll also send the report
+                on WhatsApp so you never have to chase it.
+              </p>
+              <a
+                href={waPayment}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-3 block rounded-[9px] bg-green-600 py-2.5 text-center text-sm font-bold text-white transition hover:bg-green-500"
+              >
+                Send the screenshot on WhatsApp too →
+              </a>
+            </>
+          ) : (
+            <>
+              <p className="mt-1 text-[12px] leading-relaxed text-ink-300">
+                Paste the UPI / transaction reference from your payment app. We
+                check it against our account and unlock your report.
+              </p>
+              <div className="mt-3 flex gap-2">
+                <input
+                  value={paymentReference}
+                  onChange={(e) => {
+                    setPaymentReference(e.target.value.toUpperCase().slice(0, 40));
+                    setError("");
+                  }}
+                  placeholder="e.g. 4312 8890 1123"
+                  aria-label="UPI or transaction reference"
+                  className="flex-1 rounded-[10px] border border-ink-500 bg-[#10121f] px-3.5 py-2.5 text-sm text-ink-50 outline-none focus:border-gold-300"
+                />
+                <button
+                  type="button"
+                  onClick={claimPaid}
+                  disabled={claiming || paymentReference.trim().length < 4}
+                  className="rounded-[10px] bg-gold-cta px-4 text-sm font-bold text-[#20180e] transition hover:brightness-105 disabled:opacity-60"
+                >
+                  {claiming ? "Sending…" : "Submit"}
+                </button>
+              </div>
+            </>
+          )}
           {error && <p className="mt-2 text-xs text-rose-300">{error}</p>}
         </div>
 
-        <a
-          href={waPayment}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="block rounded-[11px] bg-green-600 py-3 text-center text-sm font-bold text-white transition hover:bg-green-500"
-        >
-          Send payment screenshot on WhatsApp →
-        </a>
+        {!claimed && (
+          <a
+            href={waPayment}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block rounded-[11px] border border-green-500/40 py-3 text-center text-sm font-bold text-green-300 transition hover:bg-green-500/10"
+          >
+            Send payment screenshot on WhatsApp →
+          </a>
+        )}
 
         <div className="rounded-[18px] border border-white/10 bg-white/[0.02] px-5 py-4">
           <p className="text-[11px] font-bold uppercase tracking-eyebrow text-ink-300">

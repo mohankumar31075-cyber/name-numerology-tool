@@ -16,12 +16,10 @@ import {
   type BirthDetailsInput,
 } from "@/lib/report";
 import {
-  confirmedAmount,
   findActiveCoupon,
   getOrder,
   insertOrder,
-  PAYMENT_CONFIRM_RATE,
-  PAYMENT_CONFIRM_RATE_HEADER,
+  listOrders,
   supabaseConfigured,
   updateOrder,
   type ReportOrderRow,
@@ -32,6 +30,16 @@ export const maxDuration = 60;
 
 const WA_NUMBER = process.env.WHATSAPP_NUMBER || "919008831075";
 const UPI_ID = process.env.UPI_ID || "";
+
+/** Owner-only actions need this; unset means the admin routes stay closed. */
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN || "";
+
+function adminAuthorized(req: NextRequest, body?: Record<string, unknown>) {
+  if (!ADMIN_TOKEN) return false;
+  const header = req.headers.get("x-admin-token") || "";
+  const fromBody = body ? String(body.adminToken ?? "") : "";
+  return header === ADMIN_TOKEN || fromBody === ADMIN_TOKEN;
+}
 
 /* ------------------------------------------------------------------ helpers */
 
@@ -132,6 +140,11 @@ function priceFor(discountPercent: number) {
   return Math.max(0, Math.round(BASE_REPORT_PRICE * (1 - discountPercent / 100)));
 }
 
+/** Base price for a stored order (panchang is the cheaper product). */
+function amountFor(order: ReportOrderRow) {
+  return order.report_type === "panchang" ? 149 : BASE_REPORT_PRICE;
+}
+
 /* ---------------------------------------------------------------------- POST */
 
 /**
@@ -142,7 +155,7 @@ function priceFor(discountPercent: number) {
  *   { action: "quote",  ...birth details, coupon? }
  *   { action: "generate", ...birth details, coupon?, paid? }
  *   { action: "pay-intent", orderId, email?, whatsapp? }
- *   { action: "confirm-paid", orderId, paidAmount }
+ *   { action: "claim-paid", orderId, paymentReference, note? }
  *   { action: "generate-for-order", orderId }
  *   { action: "status", orderId }            (alias of GET below)
  */
@@ -156,6 +169,44 @@ export async function POST(req: NextRequest) {
 
   const action = String(body.action ?? "quote");
   const orderId = clean(body.orderId, 64);
+
+  /* --------------------------------------------------------- owner actions */
+  if (action === "admin-list") {
+    if (!adminAuthorized(req, body)) {
+      return NextResponse.json({ ok: false, error: "Not authorised" }, { status: 401 });
+    }
+    const listed = await listOrders(80);
+    if (!listed.ok) {
+      return NextResponse.json({ ok: false, error: listed.error }, { status: 500 });
+    }
+    return NextResponse.json({
+      ok: true,
+      orders: (listed.data ?? []).map((row) => ({
+        ...serializeOrder(row),
+        paymentReference: row.payment_reference,
+        amount: amountFor(row),
+      })),
+    });
+  }
+
+  if (action === "unlock") {
+    if (!adminAuthorized(req, body)) {
+      return NextResponse.json({ ok: false, error: "Not authorised" }, { status: 401 });
+    }
+    const target = clean(body.orderId, 64);
+    if (!/^[0-9a-fA-F-]{36}$/.test(target)) {
+      return NextResponse.json({ ok: false, error: "Invalid order id" }, { status: 400 });
+    }
+    const updated = await updateOrder(target, { payment_status: "paid" });
+    if (!updated.ok) {
+      return NextResponse.json({ ok: false, error: updated.error }, { status: 500 });
+    }
+    return NextResponse.json({ ok: true, orderId: target, reportUrl: `/report/${target}` });
+  }
+
+  if (action === "admin-enabled") {
+    return NextResponse.json({ ok: true, enabled: Boolean(ADMIN_TOKEN) });
+  }
 
   /* ---------------------------------------------------------- order actions */
   if (orderId) {
@@ -195,46 +246,70 @@ export async function POST(req: NextRequest) {
       if (whatsapp) patch.whatsapp_number = whatsapp;
       await updateOrder(order.id, patch);
 
-      const amount = order.report_type === "panchang" ? 149 : BASE_REPORT_PRICE;
+      const amount = amountFor(order);
+      const reference = order.id.slice(0, 8).toUpperCase();
+      const payMessage = [
+        `Hi, I want to pay for my ${order.report_type} report.`,
+        `Name: ${order.full_name}`,
+        `Amount: ₹${amount}`,
+        `Reference: ${reference}`,
+        "",
+        "Please share your UPI / QR so I can pay.",
+      ].join("\n");
+
       return NextResponse.json({
         ok: true,
         order: { ...serializeOrder(order), paymentStatus: "pending" },
         payment: {
           amount,
           currency: "INR",
-          reference: order.id.slice(0, 8).toUpperCase(),
+          reference,
           upiLink: upiUrl(amount, `Jyotish One ${order.report_type} report`, order.id),
           upiIdConfigured: Boolean(UPI_ID),
-          confirmHeader: PAYMENT_CONFIRM_RATE_HEADER,
-          confirmAmount: confirmedAmount(amount),
-          rate: PAYMENT_CONFIRM_RATE,
+          whatsappUrl: whatsappUrl(payMessage),
         },
         reportUrl,
       });
     }
 
-    if (action === "confirm-paid") {
-      const amount = Number(body.paidAmount);
-      const expected = confirmedAmount(
-        order.report_type === "panchang" ? 149 : BASE_REPORT_PRICE
-      );
-      if (!Number.isFinite(amount) || amount < expected) {
+    /* Customer says they have paid. We record the UPI/UTR reference and leave the
+       order pending: the owner verifies the money in their own bank app, then
+       unlocks from the admin queue. Never auto-unlock on a self-reported amount. */
+    if (action === "claim-paid") {
+      const reference = clean(body.paymentReference, 40);
+      const note = clean(body.note, 300);
+      if (reference.length < 4) {
         return NextResponse.json(
           {
             ok: false,
             error:
-              "We could not match that payment. Message us on WhatsApp with your screenshot and we will unlock it manually.",
+              "Enter the UPI / transaction reference from your payment app so we can match it.",
           },
-          { status: 402 }
+          { status: 400 }
         );
       }
-      const updated = await updateOrder(order.id, { payment_status: "paid" });
+      const updated = await updateOrder(order.id, {
+        payment_status: "pending",
+        payment_reference: note ? `${reference} | ${note}` : reference,
+      });
       if (!updated.ok) {
         return NextResponse.json({ ok: false, error: updated.error }, { status: 500 });
       }
+      const adminMessage = [
+        `I have paid for my ${order.report_type} report.`,
+        `Name: ${order.full_name}`,
+        `Amount: ₹${amountFor(order)}`,
+        `Reference: ${order.id.slice(0, 8).toUpperCase()}`,
+        `Payment ref: ${reference}`,
+        "",
+        "I have attached the payment screenshot.",
+      ].join("\n");
       return NextResponse.json({
         ok: true,
-        order: { ...serializeOrder(order), paymentStatus: "paid" },
+        paymentStatus: "pending",
+        message:
+          "Thanks — we are verifying your payment. This page unlocks within a few minutes once it is confirmed.",
+        whatsappUrl: whatsappUrl(adminMessage),
         reportUrl,
       });
     }
@@ -459,7 +534,7 @@ export async function GET(req: NextRequest) {
   if (!orderId) {
     return NextResponse.json({
       ok: true,
-      help: "POST { action: create|quote|generate|pay-intent|confirm-paid|generate-for-order, ... } or GET ?orderId=…",
+      help: "POST { action: create|quote|generate|pay-intent|claim-paid|generate-for-order, ... } or GET ?orderId=…",
       currency: "INR",
       basePrice: BASE_REPORT_PRICE,
     });

@@ -485,9 +485,9 @@ export default function CheckoutDialog({
             </div>
 
             <p className="text-xs leading-relaxed text-ink-200">
-              After paying, open your report page and enter the amount — it
-              unlocks there instantly. You can also send the screenshot on
-              WhatsApp.
+              This report page is your permanent link. Open it to pay, and it
+              unlocks by itself once your payment is verified. Keep the link —
+              you can come back to it any time.
             </p>
 
             <a
