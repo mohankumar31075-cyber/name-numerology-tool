@@ -208,6 +208,38 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, enabled: Boolean(ADMIN_TOKEN) });
   }
 
+  /* One-shot write self-check. Requires ADMIN_TOKEN, creates a clearly marked
+     row through the same insertOrder path the checkout uses, and returns only
+     booleans plus the new id so it can be deleted afterwards. */
+  if (action === "admin-write-check") {
+    if (!adminAuthorized(req, body)) {
+      return NextResponse.json({ ok: false, error: "Not authorised" }, { status: 401 });
+    }
+    const inserted = await insertOrder({
+      report_type: "numerology",
+      full_name: "STORAGE SELF-CHECK (safe to delete)",
+      birth_date: null,
+      birth_time: null,
+      birth_place: null,
+      language: "en",
+      gender: null,
+      contact_email: null,
+      whatsapp_number: null,
+      payment_status: "preview",
+      coupon_code: null,
+      source: "self-check",
+      consented_at: new Date().toISOString(),
+    });
+    if (!inserted.ok) {
+      return NextResponse.json({ ok: false, wrote: false }, { status: 500 });
+    }
+    return NextResponse.json({
+      ok: true,
+      wrote: true,
+      id: inserted.data?.[0]?.id ?? null,
+    });
+  }
+
   /* ---------------------------------------------------------- order actions */
   if (orderId) {
     if (!/^[0-9a-fA-F-]{36}$/.test(orderId)) {
