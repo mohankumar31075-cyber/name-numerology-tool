@@ -23,7 +23,8 @@ export async function POST(req: NextRequest) {
     if (!keyId || !keySecret) {
       return NextResponse.json({
         demo: true,
-        message: "Razorpay keys not configured. Use coupon FREE100 for free unlock, or add RAZORPAY_KEY_ID + RAZORPAY_KEY_SECRET in Vercel env.",
+        message:
+          "Razorpay keys not configured. Add RAZORPAY_KEY_ID + RAZORPAY_KEY_SECRET in Vercel env, or share a valid coupon code with the customer.",
         keyId: keyId || null,
       });
     }

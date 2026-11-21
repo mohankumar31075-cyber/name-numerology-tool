@@ -5,15 +5,12 @@ import { Suspense, useMemo, useState } from "react";
 import { analyzeName, generateCorrectedNames, type FullAnalysis } from "@/lib/chaldean";
 import { buildLifeTimeline } from "@/lib/horoscope";
 import { langLabel } from "@/lib/i18n";
+import { BASE_REPORT_PRICE } from "@/lib/report";
 import Link from "next/link";
 
-const COUPONS: Record<string, { type: "flat" | "percent" | "free"; value: number; label: string }> = {
-  FREE100: { type: "free", value: 100, label: "100% OFF" },
-  NAMEFREE: { type: "free", value: 100, label: "Free Report" },
-  OFF20: { type: "percent", value: 20, label: "20% OFF" },
-  OFF30: { type: "percent", value: 30, label: "30% OFF" },
-};
-const BASE_PRICE = 299;
+const BASE_PRICE = BASE_REPORT_PRICE;
+
+type AppliedCoupon = { code: string; label: string; discountPercent: number };
 
 function ResultContent() {
   const searchParams = useSearchParams();
@@ -21,8 +18,9 @@ function ResultContent() {
   const [wa, setWa] = useState("");
   const [email, setEmail] = useState("");
   const [coupon, setCoupon] = useState("");
-  const [couponApplied, setCouponApplied] = useState<string | null>(null);
+  const [couponApplied, setCouponApplied] = useState<AppliedCoupon | null>(null);
   const [couponError, setCouponError] = useState("");
+  const [couponChecking, setCouponChecking] = useState(false);
   const [unlocked, setUnlocked] = useState(false);
   const lang = searchParams.get("lang") || "en";
   const tob = searchParams.get("tob") || "";
@@ -51,24 +49,42 @@ function ResultContent() {
   const correctedOptions = generateCorrectedNames(fullName, targetVibration || 6);
 
   const subtotal = BASE_PRICE;
-  let discount = 0;
-  let isFree = false;
-  const applied = couponApplied ? COUPONS[couponApplied] : null;
-  if (applied) {
-    if (applied.type === "free") { isFree = true; discount = subtotal; }
-    else if (applied.type === "flat") discount = Math.min(applied.value, subtotal);
-    else discount = Math.round((subtotal * applied.value) / 100);
-  }
+  const discount = couponApplied
+    ? Math.round((subtotal * couponApplied.discountPercent) / 100)
+    : 0;
   const total = Math.max(0, subtotal - discount);
+  const isFree = couponApplied?.discountPercent === 100 || total === 0;
 
-  const orderMsg = encodeURIComponent(`Hi, I want the full Name + Horoscope report.\n\nName: ${fullName}\nDOB: ${day}/${month}/${year}${tob ? `\nTOB: ${tob}` : ""}\nLanguage: ${langLabel(lang)}\nName Number: ${name.nameNumber}\nLife Path: ${lifePath.lifePath}\nWhatsApp: ${wa || "—"}\nEmail: ${email || "—"}\nCoupon: ${couponApplied || "none"}\nTotal: ₹${total}${isFree ? " (FREE)" : ""}\n\nPlease send payment QR and deliver report in ${langLabel(lang)}.`);
+  const orderMsg = encodeURIComponent(`Hi, I want the full Name + Horoscope report.\n\nName: ${fullName}\nDOB: ${day}/${month}/${year}${tob ? `\nTOB: ${tob}` : ""}\nLanguage: ${langLabel(lang)}\nName Number: ${name.nameNumber}\nLife Path: ${lifePath.lifePath}\nWhatsApp: ${wa || "—"}\nEmail: ${email || "—"}\nCoupon: ${couponApplied?.code || "none"}\nTotal: ₹${total}${isFree ? " (FREE)" : ""}\n\nPlease send payment QR and deliver report in ${langLabel(lang)}.`);
   const whatsappUrl = `https://wa.me/919008831075?text=${orderMsg}`;
 
-  function applyCoupon() {
+  async function applyCoupon() {
     const code = coupon.trim().toUpperCase();
     if (!code) { setCouponError("Enter coupon"); return; }
-    if (!COUPONS[code]) { setCouponError("Invalid"); setCouponApplied(null); return; }
-    setCouponApplied(code); setCouponError("");
+    setCouponChecking(true);
+    setCouponError("");
+    try {
+      const res = await fetch("/api/coupon/check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code }),
+      });
+      const data = await res.json();
+      if (!data.valid) {
+        setCouponError(data.error || "That code is not valid or has expired.");
+        setCouponApplied(null);
+        return;
+      }
+      setCouponApplied({
+        code: data.coupon.code,
+        label: data.coupon.label,
+        discountPercent: data.coupon.discountPercent,
+      });
+    } catch {
+      setCouponError("Could not check that coupon. Try again.");
+    } finally {
+      setCouponChecking(false);
+    }
   }
 
   function handlePay() {
@@ -168,11 +184,11 @@ function ResultContent() {
             <input type="tel" value={wa} onChange={(e) => setWa(e.target.value)} placeholder="WhatsApp number *" className="mb-3 w-full rounded-xl border px-4 py-3 text-sm" />
             <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email optional" className="mb-3 w-full rounded-xl border px-4 py-3 text-sm" />
             <div className="mb-3 flex gap-2">
-              <input value={coupon} onChange={(e) => setCoupon(e.target.value)} placeholder="Coupon FREE100" className="flex-1 rounded-xl border px-4 py-3 text-sm uppercase" />
-              <button type="button" onClick={applyCoupon} className="rounded-xl bg-gray-900 px-4 text-white text-sm">Apply</button>
+              <input value={coupon} onChange={(e) => { setCoupon(e.target.value.toUpperCase()); setCouponError(""); }} placeholder="Coupon code" className="flex-1 rounded-xl border px-4 py-3 text-sm uppercase" />
+              <button type="button" onClick={applyCoupon} disabled={couponChecking} className="rounded-xl bg-gray-900 px-4 text-white text-sm disabled:opacity-60">{couponChecking ? "Checking…" : "Apply"}</button>
             </div>
             {couponError && <p className="text-xs text-red-600">{couponError}</p>}
-            {applied && <p className="text-xs text-emerald-700">✓ {applied.label}</p>}
+            {couponApplied && <p className="text-xs text-emerald-700">✓ {couponApplied.label} · {couponApplied.discountPercent}% off</p>}
             <p className="mb-3 font-bold">Total: {isFree || total === 0 ? "FREE" : `₹${total}`}</p>
             <button type="button" onClick={handlePay} className="w-full rounded-xl bg-green-600 py-3.5 text-sm font-semibold text-white">Unlock & WhatsApp →</button>
           </div>

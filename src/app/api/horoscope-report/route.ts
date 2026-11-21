@@ -1,18 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { buildFullReport, type ReportLang } from "@/lib/fullReport";
 import { CITIES } from "@/lib/hinduCalendarMcp";
+import { BASE_REPORT_PRICE } from "@/lib/report";
+import { findActiveCoupon } from "@/lib/supabaseRest";
 
 export const runtime = "nodejs";
 
-const COUPONS: Record<string, number> = {
-  FREE100: 100,
-  NAMEFREE: 100,
-  OFF10: 10,
-  OFF20: 20,
-  OFF30: 30,
-};
-
-const BASE_PRICE = 299;
+const BASE_PRICE = BASE_REPORT_PRICE;
 
 export async function POST(req: NextRequest) {
   try {
@@ -33,7 +27,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Name, DOB required" }, { status: 400 });
     }
 
-    const discount = COUPONS[coupon] ?? 0;
+    // Coupons live in Supabase (public.coupons) so every flow shares one list.
+    let discount = 0;
+    if (coupon) {
+      const active = await findActiveCoupon(coupon);
+      if (!active) {
+        return NextResponse.json(
+          { ok: false, error: "That coupon is not valid or has expired." },
+          { status: 400 }
+        );
+      }
+      discount = active.discount_percent;
+    }
+
     const price = Math.max(0, Math.round(BASE_PRICE * (1 - discount / 100)));
     const isFree = price === 0 || discount >= 100;
 
