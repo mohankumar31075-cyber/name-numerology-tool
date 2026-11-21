@@ -78,7 +78,7 @@ function ResultContent() {
   }
 
   return (
-    <div className="min-h-screen pb-28">
+    <div className="min-h-screen bg-[#f6f8ff] pb-28 text-gray-900">
       <header className="border-b border-brand-100 bg-white/90 backdrop-blur">
         <div className="mx-auto flex max-w-lg items-center justify-between px-4 py-3">
           <Link href="/" className="text-sm text-gray-600">← Back</Link>
@@ -184,7 +184,7 @@ function ResultContent() {
 
 export default function ResultPage() {
   return (
-    <Suspense fallback={<div className="flex min-h-screen items-center justify-center">Loading...</div>}>
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-[#f6f8ff] text-gray-700">Loading...</div>}>
       <ResultContent />
     </Suspense>
   );

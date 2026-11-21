@@ -1,66 +1,145 @@
-import NameForm from "@/components/NameForm";
-import ScrollToTopButton from "@/components/ScrollToTopButton";
+import HomeExperience from "@/components/home/HomeExperience";
+import OtherServices from "@/components/home/OtherServices";
+import { WHATSAPP_NUMBER } from "@/components/SiteHeader";
+
+const FEATURES = [
+  {
+    icon: "✧",
+    title: "Useful, not overwhelming",
+    body: "Clear sections turn complex chart details into an easy-to-read personal report.",
+  },
+  {
+    icon: "⌁",
+    title: "Built around your details",
+    body: "Birth date, time and location power your chart; report language choices help it feel familiar.",
+  },
+  {
+    icon: "⇩",
+    title: "Delivered your way",
+    body: "Preview on screen, then get the complete report as a PDF and a link by WhatsApp or email.",
+  },
+];
+
+const STEPS = [
+  {
+    n: "01",
+    title: "Pick a reading",
+    body: "Birth horoscope, name numerology or today's panchang.",
+  },
+  {
+    n: "02",
+    title: "Add your details",
+    body: "Name, birth date, time and place. Nothing is shared publicly.",
+  },
+  {
+    n: "03",
+    title: "Read your free preview",
+    body: "Real numbers from the Chaldean and panchang engines, instantly.",
+  },
+  {
+    n: "04",
+    title: "Unlock the full report",
+    body: "PDF + WhatsApp delivery in your chosen language.",
+  },
+];
 
 export default function HomePage() {
   return (
-    <div className="min-h-screen">
-      <section className="mx-auto grid max-w-6xl items-center gap-10 px-4 py-12 sm:px-6 lg:grid-cols-2 lg:py-16">
-        <div className="order-2 lg:order-1">
-          <p className="mb-3 text-sm font-semibold uppercase tracking-wider text-brand-600">
-            Free Numerology Calculator
+    <main>
+      <HomeExperience />
+
+      <section id="how" className="scroll-mt-24 px-5 pb-16 sm:px-7">
+        <div className="mx-auto max-w-6xl">
+          <h2 className="text-center font-serif text-2xl text-ink-50 sm:text-[2rem]">
+            Ancient systems. One clear experience.
+          </h2>
+          <p className="mx-auto mt-2 max-w-xl text-center text-sm text-ink-200">
+            Start with a quick preview; choose when you&apos;re ready for the
+            full report.
           </p>
-          <h1 className="mb-4 font-serif text-4xl font-bold leading-tight text-gray-900 sm:text-5xl">
-            Check your Name for <span className="text-brand-800">Free</span>
-          </h1>
-          <p className="mb-6 text-lg text-gray-600">
-            Is your Name blocking your{" "}
-            <span className="rounded bg-accent-400/30 px-1.5 font-semibold text-gray-900">Overnight Success?</span>
-          </p>
-          <ul className="space-y-2 text-sm text-gray-700">
-            <li className="flex items-center gap-2"><span className="text-brand-600">✓</span> Name number matched with birth number</li>
-            <li className="flex items-center gap-2"><span className="text-brand-600">✓</span> Instant Chaldean analysis</li>
-            <li className="flex items-center gap-2"><span className="text-brand-600">✓</span> Corrected spellings via WhatsApp</li>
-          </ul>
-        </div>
-        <div className="order-1 lg:order-2">
-          <NameForm />
+
+          <div className="mt-7 grid gap-3 sm:grid-cols-3">
+            {FEATURES.map((f) => (
+              <div
+                key={f.title}
+                className="rounded-[14px] border border-ink-500/70 bg-white/[0.03] p-5"
+              >
+                <span aria-hidden="true" className="text-lg text-gold-300">
+                  {f.icon}
+                </span>
+                <p className="mt-2 font-semibold text-ink-50">{f.title}</p>
+                <p className="mt-1 text-[13px] leading-relaxed text-ink-200">
+                  {f.body}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          <ol className="mt-4 grid gap-3 rounded-[14px] border border-ink-500/70 bg-white/[0.02] p-5 sm:grid-cols-2 lg:grid-cols-4">
+            {STEPS.map((s) => (
+              <li key={s.n} className="flex gap-3">
+                <span className="font-serif text-lg text-gold-300/80">
+                  {s.n}
+                </span>
+                <div>
+                  <p className="text-sm font-semibold text-ink-50">{s.title}</p>
+                  <p className="mt-0.5 text-[12px] leading-relaxed text-ink-200">
+                    {s.body}
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ol>
         </div>
       </section>
 
-      <section className="border-t border-brand-100 bg-white/80 py-12">
-        <div className="mx-auto max-w-5xl px-4">
-          <h2 className="mb-6 text-center font-serif text-2xl font-bold text-gray-900">All services</h2>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <a href="/" className="rounded-2xl border-2 border-brand-200 bg-brand-50 p-5 shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-wide text-brand-600">Free tool</p>
-              <p className="mt-1 font-serif text-xl font-bold text-gray-900">Name Numerology</p>
-              <p className="mt-1 text-sm text-gray-600">Chaldean name check & corrected spellings.</p>
+      <OtherServices />
+
+      <section className="px-5 pb-16 sm:px-7">
+        <div className="mx-auto max-w-4xl rounded-[18px] border border-gold-300/25 bg-gradient-to-br from-gold-300/[0.08] to-transparent px-6 py-8 text-center">
+          <p className="text-[11px] font-bold uppercase tracking-eyebrow text-gold-300">
+            Prefer to talk first?
+          </p>
+          <h2 className="mt-2 font-serif text-2xl text-ink-50 sm:text-3xl">
+            Ask your question on WhatsApp
+          </h2>
+          <p className="mx-auto mt-2 max-w-lg text-sm text-ink-200">
+            Share your name and birth details once and our team will guide you
+            to the right reading — in your language.
+          </p>
+          <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
+            <a
+              href={`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(
+                "Hi, I'd like help choosing a report on Jyotish One."
+              )}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded-[11px] bg-green-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-green-500"
+            >
+              Chat on WhatsApp
             </a>
-            <a href="/navagraha" className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm hover:border-brand-300">
-              <p className="text-xs font-semibold uppercase tracking-wide text-brand-600">Planets</p>
-              <p className="mt-1 font-serif text-xl font-bold text-gray-900">Navagraha</p>
-              <p className="mt-1 text-sm text-gray-600">Ruling graha & simple remedies.</p>
-            </a>
-            <a href="/matchmaking" className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm hover:border-brand-300">
-              <p className="text-xs font-semibold uppercase tracking-wide text-brand-600">Marriage</p>
-              <p className="mt-1 font-serif text-xl font-bold text-gray-900">Matchmaking</p>
-              <p className="mt-1 text-sm text-gray-600">Kundli Milan style compatibility.</p>
-            </a>
-            <a href="/horoscope" className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm hover:border-brand-300">
-              <p className="text-xs font-semibold uppercase tracking-wide text-brand-600">Daily</p>
-              <p className="mt-1 font-serif text-xl font-bold text-gray-900">Horoscope</p>
-              <p className="mt-1 text-sm text-gray-600">Sun-sign daily guidance.</p>
-            </a>
-            <a href="/consult" className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm hover:border-brand-300 sm:col-span-2 lg:col-span-1">
-              <p className="text-xs font-semibold uppercase tracking-wide text-brand-600">Experts</p>
-              <p className="mt-1 font-serif text-xl font-bold text-gray-900">Consult Astrologer</p>
-              <p className="mt-1 text-sm text-gray-600">Chat with experts on WhatsApp.</p>
+            <a
+              href="#form"
+              className="rounded-[11px] border border-white/15 px-5 py-2.5 text-sm font-semibold text-ink-50 transition hover:border-gold-300/60 hover:text-gold-200"
+            >
+              Start free preview
             </a>
           </div>
         </div>
       </section>
 
-      <ScrollToTopButton />
-    </div>
+      <footer className="border-t border-white/10 px-5 py-6 text-[12px] text-ink-300 sm:px-7">
+        <div className="mx-auto flex max-w-6xl flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <span>
+            ✦ Jyotish One · A personal guide to traditional astrology and
+            numerology.
+          </span>
+          <span>
+            For reflection and cultural interest; not professional, medical,
+            legal, or financial advice.
+          </span>
+        </div>
+      </footer>
+    </main>
   );
 }

@@ -20,7 +20,7 @@ export default function ConsultPage() {
   }
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-[#f6f8ff] text-gray-900">
       <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
         <div className="mb-8 text-center">
           <p className="text-sm font-semibold uppercase tracking-wider text-brand-600">Talk to experts</p>
