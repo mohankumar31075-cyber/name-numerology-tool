@@ -1,6 +1,6 @@
 import HomeExperience from "@/components/home/HomeExperience";
 import OtherServices from "@/components/home/OtherServices";
-import { WHATSAPP_NUMBER } from "@/components/SiteHeader";
+import { whatsappUrl } from "@/lib/site";
 
 const FEATURES = [
   {
@@ -109,9 +109,9 @@ export default function HomePage() {
           </p>
           <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
             <a
-              href={`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(
+              href={whatsappUrl(
                 "Hi, I'd like help choosing a report on Jyotish One."
-              )}`}
+              )}
               target="_blank"
               rel="noopener noreferrer"
               className="rounded-[11px] bg-green-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-green-500"

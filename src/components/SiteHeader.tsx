@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { WHATSAPP_NUMBER } from "@/lib/site";
 
 const NAV = [
   { href: "/#reports", label: "Reports" },
@@ -11,8 +12,6 @@ const NAV = [
   { href: "/matchmaking", label: "Matchmaking" },
   { href: "/consult", label: "Consult" },
 ];
-
-export const WHATSAPP_NUMBER = "919008831075";
 
 export default function SiteHeader() {
   const [open, setOpen] = useState(false);
