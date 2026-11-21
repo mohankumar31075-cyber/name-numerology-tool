@@ -532,12 +532,33 @@ function serializeOrder(order: ReportOrderRow) {
 export async function GET(req: NextRequest) {
   const orderId = clean(req.nextUrl.searchParams.get("orderId"), 64);
   if (!orderId) {
-    return NextResponse.json({
+    const help = {
       ok: true,
       help: "POST { action: create|quote|generate|pay-intent|claim-paid|generate-for-order, ... } or GET ?orderId=…",
       currency: "INR",
       basePrice: BASE_REPORT_PRICE,
-    });
+    } as Record<string, unknown>;
+
+    /* ?probe=1 — a read-only "can this deployment actually talk to the
+       database?" check. Booleans only; no keys, rows or error strings. */
+    if (req.nextUrl.searchParams.get("probe") === "1") {
+      help.storage = {
+        configured: supabaseConfigured(),
+        readable: false,
+        adminUnlock: Boolean(ADMIN_TOKEN),
+      };
+      const probe = await listOrders(1);
+      (help.storage as Record<string, unknown>).readable = probe.ok;
+      if (!probe.ok) {
+        const reason = probe.error.toLowerCase();
+        (help.storage as Record<string, unknown>).reason = reason.includes("fetch failed")
+          ? "network"
+          : reason.includes("permission") || reason.includes("row-level")
+            ? "permission"
+            : "unknown";
+      }
+    }
+    return NextResponse.json(help);
   }
   if (!/^[0-9a-fA-F-]{36}$/.test(orderId) || !supabaseConfigured()) {
     return NextResponse.json({ ok: false, error: "Order lookup unavailable" }, { status: 400 });
