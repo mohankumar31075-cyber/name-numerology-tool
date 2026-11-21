@@ -61,6 +61,11 @@ server routes using the service-role key.
 Without the Supabase variables the preview still works; leads are simply not
 stored. Without `UPI_ID` the checkout hands off to WhatsApp for payment.
 
+## Live
+
+Production: <https://name-numerology-tool.vercel.app>
+Pull-request previews deploy from `arena/5efb10f3-name-numerology-tool`.
+
 ## Local development
 
 ```bash
