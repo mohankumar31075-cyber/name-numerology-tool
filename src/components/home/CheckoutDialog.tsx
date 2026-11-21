@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BASE_REPORT_PRICE,
   isValidWhatsAppNumber,
@@ -91,29 +91,32 @@ export default function CheckoutDialog({
     return BASE_REPORT_PRICE;
   }, [quote, coupon]);
 
-  async function fetchQuote(code: string) {
-    setBusy(true);
-    setError("");
-    try {
-      const res = await fetch("/api/report", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "quote", ...details, coupon: code }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.ok) {
-        setError(data.error || "Could not prepare the payment.");
+  const fetchQuote = useCallback(
+    async (code: string) => {
+      setBusy(true);
+      setError("");
+      try {
+        const res = await fetch("/api/report", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "quote", ...details, coupon: code }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) {
+          setError(data.error || "Could not prepare the payment.");
+          return null;
+        }
+        setQuote(data.quote as Quote);
+        return data.quote as Quote;
+      } catch {
+        setError("Network error. Please try again.");
         return null;
+      } finally {
+        setBusy(false);
       }
-      setQuote(data.quote as Quote);
-      return data.quote as Quote;
-    } catch {
-      setError("Network error. Please try again.");
-      return null;
-    } finally {
-      setBusy(false);
-    }
-  }
+    },
+    [details]
+  );
 
   async function applyCoupon() {
     const code = coupon.trim().toUpperCase();
@@ -137,9 +140,11 @@ export default function CheckoutDialog({
       }
       const next = await fetchQuote(code);
       if (next) {
-        setToast(`Coupon applied — ${next.couponLabel || `${next.discountPercent}% off`}`);
+        setToast(
+          `Coupon applied — ${next.couponLabel || `${next.discountPercent}% off`}`
+        );
         if (next.isFree) {
-          await generateFullReport();
+          await generateFullReport(next.coupon);
         } else {
           setPhase("pay");
         }
@@ -151,7 +156,7 @@ export default function CheckoutDialog({
     }
   }
 
-  async function generateFullReport() {
+  async function generateFullReport(validatedCoupon?: string | null) {
     setBusy(true);
     setError("");
     try {
@@ -161,7 +166,7 @@ export default function CheckoutDialog({
         body: JSON.stringify({
           action: "generate",
           ...details,
-          coupon: quote?.coupon ?? coupon.trim().toUpperCase(),
+          coupon: validatedCoupon ?? coupon.trim().toUpperCase(),
         }),
       });
       const data = await res.json();
