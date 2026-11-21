@@ -65,7 +65,6 @@ export default function CheckoutDialog({
     reportUrl: string;
     free?: boolean;
   } | null>(null);
-  const [paidAmount, setPaidAmount] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
@@ -243,34 +242,6 @@ export default function CheckoutDialog({
       setPhase("created");
     } catch {
       setError("Network error while creating your order.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function confirmPaid() {
-    if (!created?.order?.id) return;
-    setBusy(true);
-    setError("");
-    try {
-      const res = await fetch("/api/report", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "confirm-paid",
-          orderId: created.order.id,
-          paidAmount: Number(paidAmount),
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.ok) {
-        // Never dead-end: the customer keeps the WhatsApp route either way.
-        setError(data.error || "Could not confirm that payment.");
-        return;
-      }
-      window.location.assign(data.reportUrl || `/report/${created.order.id}`);
-    } catch {
-      setError("Network error while confirming payment.");
     } finally {
       setBusy(false);
     }
@@ -483,6 +454,19 @@ export default function CheckoutDialog({
               </strong>
               . Your report is prepared and waiting on the report page.
             </div>
+
+            {created.price !== undefined && (
+              <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm">
+                <span className="text-ink-200">
+                  {quote?.couponLabel
+                    ? `${quote.couponLabel} applied`
+                    : "Amount due"}
+                </span>
+                <strong className="text-gold-300">
+                  {created.price === 0 ? "FREE" : inr(created.price)}
+                </strong>
+              </div>
+            )}
 
             <p className="text-xs leading-relaxed text-ink-200">
               This report page is your permanent link. Open it to pay, and it

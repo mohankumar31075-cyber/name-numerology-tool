@@ -141,8 +141,24 @@ function priceFor(discountPercent: number) {
 }
 
 /** Base price for a stored order (panchang is the cheaper product). */
-function amountFor(order: ReportOrderRow) {
+function baseAmountFor(order: ReportOrderRow) {
   return order.report_type === "panchang" ? 149 : BASE_REPORT_PRICE;
+}
+
+/**
+ * What this order actually costs, coupon included.
+ *
+ * The coupon was validated when the order was created, but that discount used
+ * to be forgotten afterwards: the report page then asked for the full price
+ * and the customer paid more than the checkout had quoted. Re-read the coupon
+ * here so the amount is always derived from the order, not from the request.
+ */
+async function amountFor(order: ReportOrderRow): Promise<number> {
+  const base = baseAmountFor(order);
+  if (!order.coupon_code) return base;
+  const coupon = await findActiveCoupon(order.coupon_code);
+  if (!coupon) return base;
+  return priceFor(coupon.discount_percent);
 }
 
 /* ---------------------------------------------------------------------- POST */
@@ -179,14 +195,14 @@ export async function POST(req: NextRequest) {
     if (!listed.ok) {
       return NextResponse.json({ ok: false, error: listed.error }, { status: 500 });
     }
-    return NextResponse.json({
-      ok: true,
-      orders: (listed.data ?? []).map((row) => ({
+    const rows = await Promise.all(
+      (listed.data ?? []).map(async (row) => ({
         ...serializeOrder(row),
         paymentReference: row.payment_reference,
-        amount: amountFor(row),
-      })),
-    });
+        amount: await amountFor(row),
+      }))
+    );
+    return NextResponse.json({ ok: true, orders: rows });
   }
 
   if (action === "unlock") {
@@ -278,7 +294,7 @@ export async function POST(req: NextRequest) {
       if (whatsapp) patch.whatsapp_number = whatsapp;
       await updateOrder(order.id, patch);
 
-      const amount = amountFor(order);
+      const amount = await amountFor(order);
       const reference = order.id.slice(0, 8).toUpperCase();
       const payMessage = [
         `Hi, I want to pay for my ${order.report_type} report.`,
@@ -330,7 +346,7 @@ export async function POST(req: NextRequest) {
       const adminMessage = [
         `I have paid for my ${order.report_type} report.`,
         `Name: ${order.full_name}`,
-        `Amount: ₹${amountFor(order)}`,
+        `Amount: ₹${await amountFor(order)}`,
         `Reference: ${order.id.slice(0, 8).toUpperCase()}`,
         `Payment ref: ${reference}`,
         "",
