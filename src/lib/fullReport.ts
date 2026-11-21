@@ -147,9 +147,7 @@ export async function buildFullReport(input: ReportInput): Promise<{
     `Compound name total: ${nameInfo.compound}`,
     ``,
     corrected.length
-      ? `*Suggested spellings*\n${corrected
-          .map((c) => `• ${c.spelling} (${c.nameNumber})`)
-          .join("\n")}`
+      ? `*Suggested spellings*\n${corrected.map((c) => `• ${c.spelling} (${c.nameNumber})`).join("\n")}`
       : `*Suggested spellings*: reply PDF for full correction list`,
     ``,
     `━━━━━━━━━━━━━━━━━━━━`,
@@ -192,9 +190,9 @@ export async function buildFullReport(input: ReportInput): Promise<{
   ];
 
   if (lang === "hi") {
-    lines.unshift("（रिपोर्ट संरचना अंग्रेज़ी में — पूर्ण हिंदी PDF उपलब्ध）", "");
+    lines.unshift("(Hindi note — full Hindi PDF available on request)", "");
   } else if (lang === "kn") {
-    lines.unshift("（ವರದಿ ರಚನೆ ಇಂಗ್ಲಿಷ್‌ನಲ್ಲಿ — ಪೂರ್ಣ ಕನ್ನಡ PDF ಲಭ್ಯ）", "");
+    lines.unshift("(Kannada note — full Kannada PDF available on request)", "");
   }
 
   return {
