@@ -77,7 +77,7 @@ export default function HoroscopePage() {
         <div className="mb-6 text-center">
           <p className="text-xs font-semibold uppercase tracking-wider text-indigo-600">Full detailed report</p>
           <h1 className="mt-1 font-serif text-3xl font-bold text-gray-900">Horoscope</h1>
-          <p className="mt-2 text-sm text-gray-600">Name + DOB + TOB + place → full report with dasha dates &amp; safety notes</p>
+          <p className="mt-2 text-sm text-gray-600">Name + DOB + TOB + place → full report with dasha dates</p>
         </div>
 
         <div className="mb-4">
@@ -125,7 +125,7 @@ export default function HoroscopePage() {
           </div>
           <label className="block">
             <span className="text-xs font-semibold text-gray-500">Coupon (optional)</span>
-            <input value={coupon} onChange={(e) => setCoupon(e.target.value)} placeholder="FREE100 / OFF30" className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm uppercase" />
+            <input value={coupon} onChange={(e) => setCoupon(e.target.value)} placeholder="Enter coupon code" className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm uppercase" />
           </label>
           <button type="button" disabled={loading || !fullName || !day || !month || !year} onClick={() => generate(false)} className="w-full rounded-xl bg-indigo-600 py-3.5 text-sm font-semibold text-white shadow disabled:opacity-50">
             {loading ? "Generating…" : "Generate full report"}
@@ -143,14 +143,14 @@ export default function HoroscopePage() {
               City: {String(result.preview.city)} · Lang: {langLabel(lang)}<br />
               Dasha: {String(result.preview.dashaCurrent || "—")} ({String(result.preview.dashaCurrentFrom || "")} → {String(result.preview.dashaCurrentTo || "")})
             </p>
-            <p className="text-lg font-bold text-gray-900">{result.isFree ? "₹0 (FREE)" : `₹${result.price}`}</p>
+            <p className="text-lg font-bold text-gray-900">{result.isFree ? "Paid / Free unlocked" : `Amount: ₹${result.price}`}</p>
             {result.deliverFull ? (
-              <p className="text-xs text-emerald-700">Full report unlocked — includes dasha dates, remedies, gem/yantra safety</p>
+              <p className="text-xs text-emerald-700">Full report unlocked — ready to send on WhatsApp</p>
             ) : (
-              <p className="text-xs text-amber-700">Payment required. After payment use FREE100 to unlock full report.</p>
+              <p className="text-xs text-amber-700">After payment confirmation, unlock and send the full report on WhatsApp.</p>
             )}
             <button type="button" onClick={sendToWhatsApp} className="flex w-full items-center justify-center rounded-xl bg-green-600 py-3.5 text-sm font-semibold text-white">
-              {result.deliverFull ? "Send full report on WhatsApp →" : "Send order + payment request on WhatsApp →"}
+              {result.deliverFull ? "Send full report on WhatsApp →" : "Send order request on WhatsApp →"}
             </button>
             {result.deliverFull && result.whatsappText && (
               <details className="text-xs text-gray-500">
@@ -161,7 +161,7 @@ export default function HoroscopePage() {
           </div>
         )}
 
-        <p className="mt-6 text-center text-[11px] text-gray-400">Coupons: FREE100, NAMEFREE, OFF10, OFF20, OFF30 · Max ₹299</p>
+        <p className="mt-6 text-center text-[11px] text-gray-400">Have a coupon? Enter it above. Reports are delivered on WhatsApp after confirmation.</p>
       </main>
     </div>
   );
