@@ -597,6 +597,21 @@ export async function GET(req: NextRequest) {
       };
       const probe = await listOrders(1);
       (help.storage as Record<string, unknown>).readable = probe.ok;
+
+      /* ?probe=1&coupon=CODE — proves whether the live deployment can resolve
+         a coupon at all. Reports only booleans and the discount, never the
+         table contents. */
+      const probeCoupon = clean(req.nextUrl.searchParams.get("coupon"), 32);
+      if (probeCoupon) {
+        const found = await findActiveCoupon(probeCoupon);
+        (help.storage as Record<string, unknown>).couponLookup = {
+          tried: probeCoupon.toUpperCase(),
+          resolved: Boolean(found),
+          discountPercent: found?.discount_percent ?? null,
+          expiresAt: found?.expires_at ?? null,
+          serverTime: new Date().toISOString(),
+        };
+      }
       if (!probe.ok) {
         const reason = probe.error.toLowerCase();
         (help.storage as Record<string, unknown>).reason = reason.includes("fetch failed")
