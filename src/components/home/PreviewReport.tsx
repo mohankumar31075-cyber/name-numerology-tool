@@ -133,7 +133,7 @@ export default function PreviewReport({
             </p>
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
               <span className="text-xs text-ink-200">
-                Full report · PDF + WhatsApp/email delivery
+                Full report · downloadable PDF
               </span>
               <button
                 type="button"

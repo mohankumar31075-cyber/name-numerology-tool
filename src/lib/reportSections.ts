@@ -6,10 +6,9 @@
  */
 
 import { analyzeName, generateCorrectedNames, NUMBER_MEANINGS, reduceNumber, reduceToSingleDigit } from "./chaldean";
-import { buildVimshottari, nakshatraLord, type DashaRow } from "./dasha";
 import { buildLifeTimeline } from "./horoscope";
-import { CITIES } from "./hinduCalendarMcp";
 import { panchangForDate } from "./panchang";
+import { calculateKundli, SIGNS, SIGN_LORDS, HOUSE_THEMES } from "./kundli";
 import {
   parseBirthDate,
   parseBirthTime,
@@ -17,6 +16,7 @@ import {
 } from "./report";
 
 export type ReportBlock =
+  | { kind: "chart"; cells: { sign: string; entries: string[] }[] }
   | { kind: "paragraph"; text: string }
   | { kind: "list"; items: string[] }
   | { kind: "table"; columns: string[]; rows: string[][]; note?: string }
@@ -47,22 +47,6 @@ function meaning(n: number) {
 
 function pad(n: number) {
   return String(n).padStart(2, "0");
-}
-
-function dashaTable(rows: DashaRow[], current: DashaRow | null): ReportBlock {
-  const body = rows.slice(0, 10).map((r) => [
-    r.name,
-    r.fromStr,
-    r.toStr,
-    `${r.years.toFixed(1)} yr`,
-    current && r.name === current.name && r.fromStr === current.fromStr ? "current" : "",
-  ]);
-  return {
-    kind: "table",
-    columns: ["Mahadasha", "From", "To", "Length", ""],
-    rows: body,
-    note: "Approximate Vimshottari timeline. Exact dates need the Moon degree from a city-accurate birth chart.",
-  };
 }
 
 /* ------------------------------------------------------------------ numerology */
@@ -198,153 +182,65 @@ export function buildNumerologySections(input: BirthDetailsInput): StructuredRep
 
 /* ------------------------------------------------------------------- horoscope */
 
-const SIGN_BY_LIFE_PATH: Record<number, string> = {
-  1: "Leo", 2: "Cancer", 3: "Sagittarius", 4: "Aquarius",
-  5: "Gemini", 6: "Taurus", 7: "Pisces", 8: "Capricorn", 9: "Aries",
-};
-
-const REMEDY_BY_LORD: Record<string, string> = {
-  Ketu: "Donate black sesame on a Tuesday; keep a simple meditation routine.",
-  Venus: "White sweets on Friday; keep your spaces clean and uncluttered.",
-  Sun: "Offer water to the rising sun; Sundays are for discipline, not debt.",
-  Moon: "Milk or rice on Monday; protect sleep, especially on full-moon weeks.",
-  Mars: "Red lentils on Tuesday; exercise and cooling speech calm the heat.",
-  Rahu: "Mustard oil lamp on Saturday; avoid shortcuts in money and contracts.",
-  Jupiter: "Yellow items on Thursday; learning and honest teaching help.",
-  Saturn: "Help workers, feed the needy; patience over speed in obligations.",
-  Mercury: "Green items on Wednesday; respect teachers and finish what you start.",
-};
-
+/** Sidereal birth chart: never invent missing birth time or birthplace. */
 export function buildHoroscopeSections(input: BirthDetailsInput): StructuredReport {
-  const date = parseBirthDate(input.birthDate) ?? { day: 1, month: 1, year: 2000 };
-  const time = parseBirthTime(input.birthTime) ?? { hour: 12, minute: 0 };
-  const lifePath = reduceNumber(date.day + date.month + date.year, true);
-  const lm = meaning(lifePath);
-  const timeline = buildLifeTimeline(date.day, date.month, date.year, lifePath);
-
-  // Approximate nakshatra from the calendar day (documented as approximate).
-  const dayOfYear = Math.floor(
-    (Date.UTC(date.year, date.month - 1, date.day) - Date.UTC(date.year, 0, 0)) / 86400000
-  );
-  const nakshatraNames = [
-    "Ashwini", "Bharani", "Krittika", "Rohini", "Mrigashira", "Ardra", "Punarvasu",
-    "Pushya", "Ashlesha", "Magha", "Purva Phalguni", "Uttara Phalguni", "Hasta",
-    "Chitra", "Swati", "Vishakha", "Anuradha", "Jyeshtha", "Mula", "Purva Ashadha",
-    "Uttara Ashadha", "Shravana", "Dhanishta", "Shatabhisha", "Purva Bhadrapada",
-    "Uttara Bhadrapada", "Revati",
-  ];
-  const nakshatra = nakshatraNames[dayOfYear % 27];
-  const lord = nakshatraLord(nakshatra);
-  const pada = (dayOfYear % 4) + 1;
-
-  const birthDate = new Date(Date.UTC(date.year, date.month - 1, date.day, 12));
-  const dasha = buildVimshottari(new Date(birthDate.getTime() - 12 * 3600 * 1000), lord, 3.5);
-  const cityKey = input.birthPlace.split(",")[0].trim();
-  const cityKnown = Boolean(CITIES[cityKey]);
-  const sign = SIGN_BY_LIFE_PATH[reduceToSingleDigit(lifePath)] ?? "Aries";
-  const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-
-  return {
+  const base = {
     headline: `${input.fullName} — birth horoscope`,
-    subline: `${pad(date.day)}/${pad(date.month)}/${date.year} · ${pad(time.hour)}:${pad(time.minute)} · ${input.birthPlace}`,
-    summary: [
-      { label: "Life path", value: String(lifePath), hint: lm.title },
-      { label: "Janma nakshatra", value: nakshatra, hint: `pada ${pada}` },
-      { label: "Nakshatra lord", value: lord, hint: "dasha start" },
-    ],
-    source: "chaldean+vedic-approx",
+    subline: `${input.birthDate} · ${input.birthTime || "time not provided"} · ${input.birthPlace}`,
     generatedAt: new Date().toISOString(),
+    source: "astronomy-engine / Lahiri approximation",
+  };
+  const result = calculateKundli(input);
+  if (!result.chart) return {
+    ...base, summary: [], sections: [{ id: "details-needed", title: "Birth details needed for your Kundli", blocks: [
+      { kind: "paragraph", text: result.reason || "Please contact us to complete your birth details." },
+      { kind: "paragraph", text: "We have not substituted a location or birth time: doing so would produce a misleading chart." },
+    ] }],
+  };
+  const c = result.chart;
+  const moon = c.placements.find(p => p.name === "Moon")!;
+  const chart = (navamsa: boolean): ReportBlock => ({kind:"chart", cells: SIGNS.map((sign, i) => ({
+    sign,
+    entries: [ ...(i === (navamsa ? c.d9Asc : c.ascSign) ? ["Asc"] : []), ...c.placements.filter(p => (navamsa ? p.d9 : p.sign) === i).map(p => p.name + (p.retrograde ? " (R)" : "")) ],
+  }))});
+  const position = (x: number) => `${(x % 30).toFixed(2)}°`;
+  const current = c.dashas.find(d => d.current);
+  return {
+    ...base,
+    summary: [
+      {label:"Ascendant", value:SIGNS[c.ascSign],hint:position(c.asc)},
+      {label:"Moon sign",value:SIGNS[moon.sign]},
+      {label:"Nakshatra",value:moon.nakshatra,hint:`Pada ${moon.pada}`},
+      {label:"Current dasha",value:current?.lord || "Not available"},
+    ],
     sections: [
-      {
-        id: "birth",
-        title: "Birth details",
-        blocks: [
-          {
-            kind: "table",
-            columns: ["Detail", "Value"],
-            rows: [
-              ["Date of birth", `${pad(date.day)}/${pad(date.month)}/${date.year}`],
-              ["Time of birth", input.birthTime ? `${pad(time.hour)}:${pad(time.minute)}` : "not provided (noon assumed)"],
-              ["Place", input.birthPlace],
-              ["Weekday", weekdays[birthDate.getUTCDay()]],
-              ["Gender", input.gender || "prefer not to say"],
-              ["City in engine", cityKnown ? `${cityKey} (lat/lon known)` : `${cityKey} (nearest city used)`],
-            ],
-          },
-        ],
-      },
-      {
-        id: "core",
-        title: "Temperament",
-        blocks: [
-          {
-            kind: "metrics",
-            items: [
-              { label: "Life path", value: String(lifePath), hint: lm.title },
-              { label: "Life-path sign", value: sign, hint: "indicative" },
-              { label: "Ruling planet", value: lm.planet },
-            ],
-          },
-          {
-            kind: "paragraph",
-            text: `${lm.title}. Strengths: ${lm.strengths.join(", ")}. Under pressure: ${lm.challenges.join(", ")}. In Vedic practice the Moon sign matters most for temperament — the full chart pins it from your exact birth time.`,
-          },
-        ],
-      },
-      {
-        id: "nakshatra",
-        title: "Janma nakshatra & dasha start",
-        blocks: [
-          {
-            kind: "table",
-            columns: ["Nakshatra", "Pada", "Lord", "Naam akshar basis"],
-            rows: [[nakshatra, String(pada), lord, "from pada syllable table"]],
-          },
-          {
-            kind: "paragraph",
-            text: `Your Vimshottari sequence begins with ${lord}, which is why the early dasha dates below start there. The exact balance at birth depends on the Moon's degree, so treat the first row as indicative.`,
-          },
-        ],
-      },
-      {
-        id: "dasha",
-        title: "Vimshottari dasha timeline",
-        blocks: [
-          dashaTable(dasha.rows, dasha.current),
-          {
-            kind: "paragraph",
-            text: dasha.current
-              ? `You are in ${dasha.current.name} mahadasha (${dasha.current.fromStr} → ${dasha.current.toStr}).${dasha.next ? ` Next: ${dasha.next.name} from ${dasha.next.fromStr}.` : ""}`
-              : "Current dasha cannot be resolved from the approximate sequence — exact birth time will fix this.",
-          },
-        ],
-      },
-      {
-        id: "remedies",
-        title: "Remedies for your dasha lord",
-        blocks: [
-          {
-            kind: "list",
-            items: [
-              REMEDY_BY_LORD[lord] ?? "Keep a steady routine and simple mantra practice.",
-              dasha.current ? REMEDY_BY_LORD[dasha.current.name] ?? "" : "",
-              "Remedies are supportive practices, not a substitute for medical, legal or financial advice.",
-            ].filter(Boolean),
-          },
-        ],
-      },
-      {
-        id: "phases",
-        title: "Life phases",
-        blocks: [
-          {
-            kind: "table",
-            columns: ["Phase", "Age", "Status"],
-            rows: timeline.phases.map((p) => [p.title.en, p.ageRange, p.status]),
-          },
-          { kind: "paragraph", text: timeline.present },
-        ],
-      },
+      {id:"birth",title:"Birth details & calculation method",blocks:[
+        {kind:"table",columns:["Detail","Value"],rows:[["Name",input.fullName],["Birth date",input.birthDate],["Local birth time",input.birthTime],["Birthplace",input.birthPlace],["Coordinates",`${c.city}: ${c.lat}°, ${c.lon}°`],["Time zone",c.zone],["UTC moment",c.utc],["Ayanamsa",`Lahiri approximation ${c.ayanamsa.toFixed(4)}°`],["House system","Whole sign; mean Rahu and Ketu"]]},
+        {kind:"paragraph",text:"Astronomy Engine geocentric positions, approximate Lahiri ayanamsa and mean lunar node. Ayanamsa, node choice, rounding and ephemeris differences can change results near sign or nakshatra boundaries. Birth time and city-centre coordinates affect the ascendant. For an expert-grade chart, confirm with a professional ephemeris."},
+      ]},
+      {id:"rashi-chart",title:"D1 Rashi / Lagna chart",blocks:[
+        {kind:"paragraph",text:"South Indian layout: signs stay fixed; Asc marks the first house. (R) means retrograde. Rahu and Ketu use the mean node."}, chart(false),
+      ]},
+      {id:"grahas",title:"Planetary positions",blocks:[
+        {kind:"table",columns:["Graha","Sign & degree","House","Nakshatra / pada","Motion"],rows:c.placements.map(p=>[p.name,`${SIGNS[p.sign]} ${position(p.longitude)}`,String(p.house),`${p.nakshatra} / ${p.pada}`,p.retrograde?"Retrograde":"Direct"]),note:`Ascendant: ${SIGNS[c.ascSign]} ${position(c.asc)}. Degrees are within the sidereal sign.`},
+      ]},
+      {id:"houses",title:"Twelve houses and their themes",blocks:[
+        {kind:"table",columns:["House","Sign","Lord","Planets","Area of life"],rows:HOUSE_THEMES.map((theme,i)=>{const sign=(c.ascSign+i)%12; return [String(i+1),SIGNS[sign],SIGN_LORDS[sign],c.placements.filter(p=>p.house===i+1).map(p=>p.name).join(", ") || "—",theme];})},
+        {kind:"paragraph",text:"House themes are traditional interpretive prompts, not predictions. An empty house remains significant through its sign and sign lord."},
+      ]},
+      {id:"navamsa",title:"D9 Navamsa chart",blocks:[
+        {kind:"paragraph",text:"Each sign is divided into nine equal parts. D9 is traditionally used as a supplementary chart; interpret it alongside D1 rather than on its own."},chart(true),
+        {kind:"table",columns:["Graha","D1 sign","D9 sign"],rows:c.placements.map(p=>[p.name,SIGNS[p.sign],SIGNS[p.d9]])},
+      ]},
+      {id:"dasha",title:"Vimshottari dasha",blocks:[
+        {kind:"paragraph",text:`Moon in ${moon.nakshatra}, pada ${moon.pada}. The starting mahadasha balance is approximately ${c.balance.toFixed(2)} years, based on the Moon's position within the nakshatra. Dates use a 365.2425-day year and may differ from other traditions.`},
+        {kind:"table",columns:["Mahadasha","From (UTC)","To (UTC)","Status"],rows:c.dashas.map(d=>[d.lord,d.from,d.to,d.current?"current":""])},
+        {kind:"paragraph",text:current ? `Current mahadasha: ${current.lord}${c.currentSub ? `; current antardasha: ${c.currentSub.lord} (${c.currentSub.from} to ${c.currentSub.to})` : ""}.` : "No current period is available within the calculated sequence."},
+      ]},
+      {id:"interpretation",title:"Reading your chart",blocks:[
+        {kind:"paragraph",text:`Your ascendant is ${SIGNS[c.ascSign]}, traditionally associated with the first house of self and identity. The Moon is in ${SIGNS[moon.sign]} in house ${moon.house}, associated with ${HOUSE_THEMES[moon.house-1]}. These are traditional associations for reflection, not verified predictions.`},
+        {kind:"list",items:c.placements.map(p=>`${p.name} in ${SIGNS[p.sign]}, house ${p.house}: consider the traditional themes of ${HOUSE_THEMES[p.house-1]} alongside the planet's role in the chart.`)},
+      ]},
     ],
   };
 }

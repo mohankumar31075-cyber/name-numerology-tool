@@ -156,7 +156,7 @@ export default function BirthForm({
               className={fieldBase}
             />
             <p className="mt-1 text-[11px] text-ink-300">
-              If unknown, leave blank for a general reading.
+              For a full Kundli, an exact birth time is required. You can leave it blank for a free preview.
             </p>
           </div>
 
@@ -175,9 +175,10 @@ export default function BirthForm({
               autoComplete="off"
               className={fieldBase}
             />
-            {showSuggestions && (
-              <ul className="absolute z-20 mt-1 w-full overflow-hidden rounded-[10px] border border-ink-500 bg-ink-850 shadow-panel">
-                {PLACE_SUGGESTIONS.map((place) => (
+            {effectiveType === "horoscope" && <p className="mt-1 text-[11px] text-ink-300">Full Kundli currently supports Bengaluru, Mysuru, Mumbai, Delhi, Chennai, Hyderabad, Kolkata, Pune and Ujjain. Enter the city first.</p>}
+            {showSuggestions && PLACE_SUGGESTIONS.some(place => place.toLowerCase().includes(details.birthPlace.trim().toLowerCase())) && (
+              <ul className="absolute z-20 mt-1 max-h-48 w-full overflow-auto rounded-[10px] border border-ink-500 bg-ink-850 shadow-panel">
+                {PLACE_SUGGESTIONS.filter(place => place.toLowerCase().includes(details.birthPlace.trim().toLowerCase())).map((place) => (
                   <li key={place}>
                     <button
                       type="button"
@@ -252,8 +253,7 @@ export default function BirthForm({
         </button>
 
         <p className="mt-3 text-center text-[11px] leading-relaxed text-ink-300">
-          A short preview is free. Unlock the complete report as a downloadable
-          PDF and receive a copy by WhatsApp or email.
+          A short preview is free. Unlock the complete report to download a PDF. Horoscope report content is currently in English.
         </p>
       </form>
     </section>

@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { buildFullReport } from "@/lib/fullReport";
+import { calculateKundli } from "@/lib/kundli";
 import {
   buildNumerologyReport,
   buildPanchangWhatsApp,
@@ -128,7 +129,12 @@ async function composeWhatsAppText(input: BirthDetailsInput) {
 
 async function fullReportPayload(input: BirthDetailsInput) {
   const structured: StructuredReport = buildStructuredReport(input);
-  const flat = await composeWhatsAppText(input);
+  // Use the same calculated chart for the on-screen report and its text version.
+  // Do not send the old day-of-year approximation as a Kundli.
+  const flat = input.reportType === "horoscope" ? {
+    whatsappText: [structured.headline, structured.subline, ...structured.summary.map(m => `${m.label}: ${m.value}${m.hint ? ` (${m.hint})` : ""}`), "Open your report page to view and download the complete Kundli PDF."].join("\n"),
+    source: structured.source,
+  } : await composeWhatsAppText(input);
   return {
     structured,
     whatsappText: flat.whatsappText,
@@ -388,6 +394,10 @@ export async function POST(req: NextRequest) {
         { ok: false, error: "Name, a valid date of birth and birth place are required." },
         { status: 400 }
       );
+    }
+    if (input.reportType === "horoscope") {
+      const chart = calculateKundli(input);
+      if (!chart.chart) return NextResponse.json({ ok: false, error: chart.reason }, { status: 400 });
     }
     if (!supabaseConfigured()) {
       return NextResponse.json(

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReportBlock, StructuredReport } from "@/lib/reportSections";
 
 type Report = {
@@ -28,6 +28,17 @@ function inr(n: number) {
 }
 
 function Block({ block }: { block: ReportBlock }) {
+  if (block.kind === "chart") {
+    // Fixed-sign South Indian chart, clockwise from Pisces in the top-left.
+    const cells = [11,0,1,2,10,null,null,3,9,null,null,4,8,7,6,5];
+    return <div className="grid grid-cols-4 border-l border-t border-gold-300/40" aria-label="South Indian fixed-sign chart">
+      {cells.map((index, i) => index === null ? <div key={i} className="min-h-[70px] border-b border-r border-gold-300/40 bg-white/[0.02]" /> :
+        <div key={i} className="min-h-[70px] border-b border-r border-gold-300/40 p-2">
+          <span className="block text-[10px] font-bold text-gold-300">{block.cells[index].sign}</span>
+          <span className="block break-words text-xs leading-relaxed text-ink-50">{block.cells[index].entries.join(", ") || "—"}</span>
+        </div>)}
+    </div>;
+  }
   if (block.kind === "paragraph") {
     return (
       <p className="text-[13.5px] leading-relaxed text-ink-100">{block.text}</p>
@@ -134,6 +145,51 @@ export default function ReportView({
   const [claiming, setClaiming] = useState(false);
   const [claimed, setClaimed] = useState(false);
   const [paidNow, setPaidNow] = useState(paid);
+  const [downloading, setDownloading] = useState(false);
+  const [pdfError, setPdfError] = useState("");
+  const pdfRef = useRef<HTMLDivElement>(null);
+
+  async function downloadPdf() {
+    if (!pdfRef.current || downloading) return;
+    setDownloading(true); setPdfError("");
+    try {
+      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import("html2canvas"), import("jspdf")]);
+      const pdf = new jsPDF({unit:"mm",format:"a4",compress:true});
+      const pageWidth = 210, pageHeight = 297, margin = 12, width = pageWidth - 2*margin;
+      let y = margin;
+      const sections = pdfRef.current.querySelectorAll<HTMLElement>("[data-pdf-section]");
+      for (const section of Array.from(sections)) {
+        const canvas = await html2canvas(section, {
+          backgroundColor: "#151728", scale: 1.5, windowWidth: 1024,
+          onclone: (doc, cloned) => {
+            cloned.style.width = "760px";
+            cloned.style.maxWidth = "none";
+            cloned.querySelectorAll<HTMLElement>(".overflow-x-auto").forEach(el => { el.style.overflow = "visible"; });
+            cloned.querySelectorAll<HTMLElement>("table").forEach(el => { el.style.minWidth = "0"; });
+          },
+        });
+        const imageHeight = canvas.height * width / canvas.width;
+        if (y > margin && imageHeight <= pageHeight - 2*margin && y + imageHeight > pageHeight - margin) { pdf.addPage(); y = margin; }
+        let pixelY = 0;
+        while (pixelY < canvas.height) {
+          const available = pageHeight - margin - y;
+          if (available < 15) { pdf.addPage(); y = margin; continue; }
+          const sliceHeight = Math.min(canvas.height - pixelY, Math.floor(available * canvas.width / width));
+          const slice = document.createElement("canvas"); slice.width = canvas.width; slice.height = sliceHeight;
+          const ctx = slice.getContext("2d");
+          if (!ctx) throw new Error("Canvas is unavailable");
+          ctx.drawImage(canvas, 0, pixelY, canvas.width, sliceHeight, 0, 0, canvas.width, sliceHeight);
+          const h = sliceHeight * width / canvas.width;
+          pdf.addImage(slice.toDataURL("image/jpeg", 0.9), "JPEG", margin, y, width, h);
+          y += h + 3; pixelY += sliceHeight;
+          if (pixelY < canvas.height) { pdf.addPage(); y = margin; }
+        }
+      }
+      pdf.save(`jyotish-one-report-${reference}.pdf`);
+    } catch {
+      setPdfError("Could not create the PDF on this device. Please use Print / save PDF instead.");
+    } finally { setDownloading(false); }
+  }
 
   const loadReport = useCallback(async () => {
     setLoading(true);
@@ -370,7 +426,19 @@ export default function ReportView({
 
   return (
     <div className="mt-5">
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className="flex flex-wrap gap-2 print:hidden">
+        <button type="button" onClick={() => void downloadPdf()} disabled={downloading} className="flex-1 rounded-[11px] bg-gold-cta px-4 py-3 text-sm font-bold text-[#20180e] disabled:opacity-60">{downloading ? "Preparing PDF…" : "Download complete PDF"}</button>
+        <button type="button" onClick={() => window.print()} className="flex-1 rounded-[11px] border border-white/15 px-4 py-3 text-sm font-semibold text-ink-50">Print / save PDF</button>
+        <a href={report.whatsappUrl} target="_blank" rel="noopener noreferrer" className="flex-1 rounded-[11px] bg-green-600 px-4 py-3 text-center text-sm font-semibold text-white">Send to WhatsApp</a>
+      </div>
+      {pdfError && <p role="alert" className="mt-2 text-sm text-rose-300">{pdfError}</p>}
+      <div ref={pdfRef}>
+      <div data-pdf-section className="mt-4 rounded-[14px] border border-white/10 bg-white/[0.03] p-4">
+        <p className="text-xs uppercase text-gold-300">Jyotish One · Complete report</p>
+        <h2 className="mt-1 font-serif text-xl text-ink-50">{report.structured.headline}</h2>
+        <p className="mt-1 text-sm text-ink-200">{report.structured.subline}</p>
+      </div>
+      <div data-pdf-section className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
         {report.structured.summary.map((m) => (
           <div
             key={m.label}
@@ -389,28 +457,11 @@ export default function ReportView({
         ))}
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-2 print:hidden">
-        <a
-          href={report.whatsappUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex-1 rounded-[11px] bg-green-600 px-4 py-2.5 text-center text-sm font-semibold text-white transition hover:bg-green-500"
-        >
-          Send to WhatsApp
-        </a>
-        <button
-          type="button"
-          onClick={() => window.print()}
-          className="flex-1 rounded-[11px] border border-white/15 px-4 py-2.5 text-sm font-semibold text-ink-50 transition hover:border-gold-300/60 hover:text-gold-200"
-        >
-          Print / save PDF
-        </button>
-      </div>
-
       <div className="mt-5 space-y-3">
         {report.structured.sections.map((section) => (
           <section
             key={section.id}
+            data-pdf-section
             className="rounded-[14px] border border-white/10 bg-white/[0.03] px-4 py-4"
           >
             <h2 className="font-serif text-lg text-ink-50">{section.title}</h2>
@@ -423,8 +474,8 @@ export default function ReportView({
         ))}
       </div>
 
-      <p className="mt-5 rounded-[14px] border border-white/10 bg-white/[0.02] px-4 py-3 text-[11px] leading-relaxed text-ink-300">
-        Report in {languageLabel} · generated{" "}
+      <p data-pdf-section className="mt-5 rounded-[14px] border border-white/10 bg-white/[0.02] px-4 py-3 text-[11px] leading-relaxed text-ink-300">
+        Report content: English{languageLabel !== "English" ? ` (requested: ${languageLabel})` : ""} · generated{" "}
         {new Date(report.structured.generatedAt).toLocaleDateString("en-IN", {
           day: "numeric",
           month: "short",
@@ -435,6 +486,7 @@ export default function ReportView({
         advice.
       </p>
 
+      </div>
       <div className="mt-4 print:hidden">
         <details className="rounded-[14px] border border-white/10 bg-white/[0.02] px-4 py-3">
           <summary className="cursor-pointer text-xs font-semibold text-ink-100">

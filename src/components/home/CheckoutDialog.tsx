@@ -8,6 +8,7 @@ import {
   type BirthDetailsInput,
 } from "@/lib/report";
 import type { ReportPreview } from "@/lib/preview";
+import { CITIES } from "@/lib/hinduCalendarMcp";
 
 type Quote = {
   basePrice: number;
@@ -178,7 +179,7 @@ export default function CheckoutDialog({
         `Coupon applied — ${next.couponLabel || `${next.discountPercent}% off`}`
       );
       if (next.isFree) {
-        await generateFullReport(next.coupon);
+        await createOrder(next.coupon);
       } else {
         setPhase("pay");
       }
@@ -189,34 +190,15 @@ export default function CheckoutDialog({
     }
   }
 
-  async function generateFullReport(validatedCoupon?: string | null) {
-    setBusy(true);
-    setError("");
-    try {
-      const res = await fetch("/api/report", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "generate",
-          ...details,
-          coupon: validatedCoupon ?? coupon.trim().toUpperCase(),
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.ok || !data.report) {
-        setError(data.error || "Could not create the full report.");
-        return;
-      }
-      setReport(data.report as FullReport);
-      setPhase("ready");
-    } catch {
-      setError("Network error while creating the report.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
   function continueFromDetails() {
+    if (details.reportType === "horoscope" && !details.birthTime) {
+      setError("For the full Kundli, please close this window and add your exact birth time in the form.");
+      return;
+    }
+    if (details.reportType === "horoscope" && !Object.keys(CITIES).some(city => city.toLowerCase() === details.birthPlace.split(",")[0].trim().toLowerCase())) {
+      setError("For the full Kundli, please close this window and choose one of the supported birth cities shown on the form.");
+      return;
+    }
     if (whatsapp && !isValidWhatsAppNumber(whatsapp)) {
       setError("Enter a valid WhatsApp number with country code.");
       return;
@@ -237,7 +219,7 @@ export default function CheckoutDialog({
     );
   }
 
-  async function createOrder() {
+  async function createOrder(validatedCoupon?: string | null) {
     setBusy(true);
     setError("");
     try {
@@ -247,7 +229,7 @@ export default function CheckoutDialog({
         body: JSON.stringify({
           action: "create",
           ...details,
-          coupon: quote?.coupon ?? coupon.trim().toUpperCase(),
+          coupon: validatedCoupon ?? quote?.coupon ?? coupon.trim().toUpperCase(),
           email,
           whatsapp,
           source: "home-checkout",
@@ -353,7 +335,7 @@ export default function CheckoutDialog({
               />
             </label>
             <p className="text-[11px] leading-relaxed text-ink-300">
-              We use these only to deliver your report. No marketing spam.
+              Your report is available on its private link; it is not automatically emailed or sent to WhatsApp. Full horoscope reports are currently in English.
             </p>
             <button
               type="button"
@@ -456,7 +438,7 @@ export default function CheckoutDialog({
 
             <button
               type="button"
-              onClick={createOrder}
+              onClick={() => void createOrder()}
               disabled={busy}
               className="w-full rounded-[11px] bg-gold-cta py-3 text-sm font-bold text-[#20180e] transition hover:brightness-105 disabled:opacity-70"
             >
@@ -527,16 +509,16 @@ export default function CheckoutDialog({
         {phase === "ready" && report && (
           <div className="space-y-3">
             <div className="rounded-xl border border-mint-400/30 bg-mint-400/[0.07] px-4 py-3 text-sm text-ink-100">
-              Your full report is ready. Open it on WhatsApp to save or forward
-              it.
+              Your full report is ready. Open your report page to view the charts and download the PDF.
             </div>
+            {created?.reportUrl && <a href={created.reportUrl} className="block rounded-[11px] bg-gold-cta py-3 text-center text-sm font-bold text-[#20180e]">View report & download PDF →</a>}
             <a
               href={report.whatsappUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="block rounded-[11px] bg-green-600 py-3 text-center text-sm font-bold text-white transition hover:bg-green-500"
             >
-              Open full report on WhatsApp →
+              Share summary on WhatsApp →
             </a>
             <details className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
               <summary className="cursor-pointer text-xs font-semibold text-ink-100">
@@ -546,13 +528,6 @@ export default function CheckoutDialog({
                 {report.whatsappText}
               </pre>
             </details>
-            <button
-              type="button"
-              onClick={() => window.print()}
-              className="w-full rounded-[11px] border border-white/15 py-2.5 text-sm text-ink-100 transition hover:border-white/30"
-            >
-              Print / save as PDF
-            </button>
           </div>
         )}
 

@@ -65,23 +65,6 @@ const PLANET_BY_NUMBER: Record<number, string> = {
   22: "Saturn / Uranus (master 22)",
 };
 
-const NAKSHATRA_LORDS = [
-  "Ketu", "Venus", "Sun", "Moon", "Mars", "Rahu", "Jupiter", "Saturn", "Mercury",
-];
-
-/** Approximate nakshatra from a birth date, used only for the free preview. */
-function approximateNakshatra(dayOfYear: number) {
-  const index = dayOfYear % 27;
-  const names = [
-    "Ashwini", "Bharani", "Krittika", "Rohini", "Mrigashira", "Ardra",
-    "Punarvasu", "Pushya", "Ashlesha", "Magha", "Purva Phalguni",
-    "Uttara Phalguni", "Hasta", "Chitra", "Swati", "Vishakha", "Anuradha",
-    "Jyeshtha", "Mula", "Purva Ashadha", "Uttara Ashadha", "Shravana",
-    "Dhanishta", "Shatabhisha", "Purva Bhadrapada", "Uttara Bhadrapada", "Revati",
-  ];
-  return { name: names[index], lord: NAKSHATRA_LORDS[index % 9], index };
-}
-
 function numberProfile(n: number) {
   const base = reduceToSingleDigit(n);
   return NUMBER_MEANINGS[n] ?? NUMBER_MEANINGS[base] ?? NUMBER_MEANINGS[1];
@@ -172,12 +155,6 @@ function buildHoroscopePreview(input: BirthDetailsInput, date: { day: number; mo
   const psychic = getPsychicNumber(day);
   const lifeMeaning = numberProfile(lifePath);
   const psychicMeaning = numberProfile(psychic);
-  const dayOfYear = date
-    ? Math.floor(
-        (Date.UTC(year, month - 1, day) - Date.UTC(year, 0, 0)) / 86400000
-      )
-    : 0;
-  const nakshatra = approximateNakshatra(dayOfYear);
   const timeline = date ? buildLifeTimeline(day, month, year, lifePath) : null;
   const birthDate = date ? new Date(Date.UTC(year, month - 1, day)) : null;
   const weekday = birthDate
@@ -194,7 +171,7 @@ function buildHoroscopePreview(input: BirthDetailsInput, date: { day: number; mo
     metrics: [
       { label: "Life path", value: String(lifePath), hint: lifeMeaning.title },
       { label: "Psychic number", value: String(psychic), hint: psychicMeaning.planet },
-      { label: "Birth nakshatra", value: nakshatra.name, hint: `Lord ${nakshatra.lord}` },
+      { label: "Birth nakshatra", value: "In full chart", hint: "Birth details required" },
     ],
     numbers: { lifePath, psychic },
     sections: [
@@ -205,7 +182,7 @@ function buildHoroscopePreview(input: BirthDetailsInput, date: { day: number; mo
       },
       {
         title: "Birth star (nakshatra)",
-        body: `Approximate janma nakshatra: ${nakshatra.name}, ruled by ${nakshatra.lord}. The full kundli pins the exact pada from your birth time and place — the pada decides your naam akshar (naming syllable) and the first dasha balance.`,
+        body: "The full report calculates your birth nakshatra and pada from the Moon’s position. An exact birth time and supported birthplace are required.",
         tone: "highlight",
       },
       ...(timeline
@@ -219,11 +196,11 @@ function buildHoroscopePreview(input: BirthDetailsInput, date: { day: number; mo
         : []),
       {
         title: "What the full report adds",
-        body: `Exact Lagna and house placements, planetary strengths, Vimshottari dasha dates month-by-month, and remedies matched to your running dasha lord${time ? "" : " — add a birth time to sharpen the Lagna and dasha timing"}.`,
+        body: "Calculated Lagna, D1 and D9 charts, planetary and house placements, and a Vimshottari dasha timeline, with downloadable PDF.",
         tone: "default",
       },
     ],
-    reflection: `Your chart opens with ${lifeMeaning.title.toLowerCase()} and a ${psychicMeaning.planet}-influenced mind. ${time ? "With a birth time you also get an exact Lagna and dasha timeline." : "Adding a birth time sharpens the Lagna and dasha timeline."} The complete PDF walks through career, relationships and wellbeing themes.`,
+    reflection: `This preview uses numerology. The complete chart requires an exact birth time and a supported birthplace; its traditional house themes are offered for reflection.`,
     birth: {
       date: date ? `${day}/${month}/${year}` : undefined,
       time: input.birthTime || undefined,

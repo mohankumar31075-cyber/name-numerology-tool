@@ -11,12 +11,12 @@ const FEATURES = [
   {
     icon: "⌁",
     title: "Built around your details",
-    body: "Birth date, time and location power your chart; report language choices help it feel familiar.",
+    body: "Birth date, time and location power your chart. Full horoscope reports are currently in English.",
   },
   {
     icon: "⇩",
     title: "Delivered your way",
-    body: "Preview on screen, then get the complete report as a PDF and a link by WhatsApp or email.",
+    body: "Preview on screen, then open your report page and download the PDF.",
   },
 ];
 
@@ -39,7 +39,7 @@ const STEPS = [
   {
     n: "04",
     title: "Unlock the full report",
-    body: "PDF + WhatsApp delivery in your chosen language.",
+    body: "View your report online and download its PDF.",
   },
 ];
 
