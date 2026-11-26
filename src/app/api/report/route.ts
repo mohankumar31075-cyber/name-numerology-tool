@@ -17,6 +17,7 @@ import {
 } from "@/lib/report";
 import {
   findActiveCoupon,
+  resolveCoupon,
   getOrder,
   insertOrder,
   listOrders,
@@ -398,14 +399,24 @@ export async function POST(req: NextRequest) {
     const couponCode = clean(body.coupon, 32).toUpperCase();
     let discountPercent = 0;
     if (couponCode) {
-      const coupon = await findActiveCoupon(couponCode);
-      if (!coupon) {
+      const lookup = await resolveCoupon(couponCode);
+      if (lookup.status === "error") {
+        return NextResponse.json(
+          {
+            ok: false,
+            retry: true,
+            error: "We could not reach our server to check that code. Please try again.",
+          },
+          { status: 503 }
+        );
+      }
+      if (lookup.status === "invalid") {
         return NextResponse.json(
           { ok: false, error: "That coupon is not valid or has expired." },
           { status: 400 }
         );
       }
-      discountPercent = coupon.discount_percent;
+      discountPercent = lookup.coupon.discount_percent;
     }
     const price = priceFor(discountPercent);
     const isFree = price === 0;
@@ -473,15 +484,25 @@ export async function POST(req: NextRequest) {
     let discountPercent = 0;
     let couponLabel: string | null = null;
     if (couponCode) {
-      const coupon = await findActiveCoupon(couponCode);
-      if (!coupon) {
+      const lookup = await resolveCoupon(couponCode);
+      if (lookup.status === "error") {
+        return NextResponse.json(
+          {
+            ok: false,
+            retry: true,
+            error: "We could not reach our server to check that code. Please try again.",
+          },
+          { status: 503 }
+        );
+      }
+      if (lookup.status === "invalid") {
         return NextResponse.json(
           { ok: false, error: "That coupon is not valid or has expired." },
           { status: 400 }
         );
       }
-      discountPercent = coupon.discount_percent;
-      couponLabel = coupon.label;
+      discountPercent = lookup.coupon.discount_percent;
+      couponLabel = lookup.coupon.label;
     }
     const price = priceFor(discountPercent);
     const reference = randomUUID();
@@ -531,14 +552,24 @@ export async function POST(req: NextRequest) {
     const couponCode = clean(body.coupon, 32).toUpperCase();
     let discountPercent = 0;
     if (couponCode) {
-      const coupon = await findActiveCoupon(couponCode);
-      if (!coupon) {
+      const lookup = await resolveCoupon(couponCode);
+      if (lookup.status === "error") {
+        return NextResponse.json(
+          {
+            ok: false,
+            retry: true,
+            error: "We could not reach our server to check that code. Please try again.",
+          },
+          { status: 503 }
+        );
+      }
+      if (lookup.status === "invalid") {
         return NextResponse.json(
           { ok: false, error: "That coupon is not valid or has expired." },
           { status: 400 }
         );
       }
-      discountPercent = coupon.discount_percent;
+      discountPercent = lookup.coupon.discount_percent;
     }
     const price = priceFor(discountPercent);
     if (price > 0 && body.paid !== true) {

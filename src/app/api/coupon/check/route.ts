@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { findActiveCoupon } from "@/lib/supabaseRest";
+import { resolveCoupon } from "@/lib/supabaseRest";
 
 export const runtime = "nodejs";
 
@@ -20,10 +20,33 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Enter a coupon code." }, { status: 400 });
   }
 
-  const coupon = await findActiveCoupon(code);
-  if (!coupon) {
+  const lookup = await resolveCoupon(code);
+
+  /* A database hiccup is not the customer's mistake. Say so, and let the UI
+     invite another try instead of claiming the code is dead. */
+  if (lookup.status === "error") {
     return NextResponse.json(
-      { ok: false, valid: false, error: "That code is not valid or has expired." },
+      {
+        ok: false,
+        valid: false,
+        retry: true,
+        error: "We could not check that code just now. Please try again.",
+      },
+      { status: 200 }
+    );
+  }
+
+  if (lookup.status === "invalid") {
+    return NextResponse.json(
+      {
+        ok: false,
+        valid: false,
+        reason: lookup.reason,
+        error:
+          lookup.reason === "expired"
+            ? "That code has expired."
+            : "That code is not valid or has expired.",
+      },
       { status: 200 }
     );
   }
@@ -32,10 +55,10 @@ export async function POST(req: NextRequest) {
     ok: true,
     valid: true,
     coupon: {
-      code: coupon.code,
-      label: coupon.label,
-      discountPercent: coupon.discount_percent,
-      expiresAt: coupon.expires_at,
+      code: lookup.coupon.code,
+      label: lookup.coupon.label,
+      discountPercent: lookup.coupon.discount_percent,
+      expiresAt: lookup.coupon.expires_at,
     },
   });
 }

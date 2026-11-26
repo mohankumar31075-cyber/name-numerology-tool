@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { buildFullReport, type ReportLang } from "@/lib/fullReport";
 import { CITIES } from "@/lib/hinduCalendarMcp";
 import { BASE_REPORT_PRICE } from "@/lib/report";
-import { findActiveCoupon } from "@/lib/supabaseRest";
+import { resolveCoupon } from "@/lib/supabaseRest";
 
 export const runtime = "nodejs";
 
@@ -30,14 +30,30 @@ export async function POST(req: NextRequest) {
     // Coupons live in Supabase (public.coupons) so every flow shares one list.
     let discount = 0;
     if (coupon) {
-      const active = await findActiveCoupon(coupon);
-      if (!active) {
+      const lookup = await resolveCoupon(coupon);
+      if (lookup.status === "error") {
         return NextResponse.json(
-          { ok: false, error: "That coupon is not valid or has expired." },
+          {
+            ok: false,
+            retry: true,
+            error: "We could not reach our server to check that code. Please try again.",
+          },
+          { status: 503 }
+        );
+      }
+      if (lookup.status === "invalid") {
+        return NextResponse.json(
+          {
+            ok: false,
+            error:
+              lookup.reason === "expired"
+                ? "That coupon has expired."
+                : "That coupon is not valid or has expired.",
+          },
           { status: 400 }
         );
       }
-      discount = active.discount_percent;
+      discount = lookup.coupon.discount_percent;
     }
 
     const price = Math.max(0, Math.round(BASE_PRICE * (1 - discount / 100)));

@@ -47,27 +47,41 @@ async function rest<T>(
   if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   if (!headers.has("Prefer")) headers.set("Prefer", "return=representation");
 
-  try {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-      ...init,
-      headers,
-      cache: "no-store",
-    });
-    const text = await res.text();
-    const body = text ? JSON.parse(text) : null;
-    if (!res.ok) {
-      const message =
-        (body && (body.message || body.hint || body.error)) ||
-        `Supabase HTTP ${res.status}`;
-      return { ok: false, error: String(message) };
+  /* Retry transient failures. Reads here are idempotent, and a single dropped
+     connection must not be reported to a customer as an invalid coupon. */
+  const attempts = 3;
+  let lastError = "Supabase request failed";
+
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+        ...init,
+        headers,
+        cache: "no-store",
+        signal: AbortSignal.timeout(8000),
+      });
+      const text = await res.text();
+      const body = text ? JSON.parse(text) : null;
+
+      if (!res.ok) {
+        const message =
+          (body && (body.message || body.hint || body.error)) ||
+          `Supabase HTTP ${res.status}`;
+        // 5xx and 429 are worth retrying; 4xx (auth, bad filter) are not.
+        if (res.status >= 500 || res.status === 429) {
+          lastError = String(message);
+          if (i < attempts - 1) await new Promise((r) => setTimeout(r, 150 * (i + 1)));
+          continue;
+        }
+        return { ok: false, error: String(message) };
+      }
+      return { ok: true, data: body as T };
+    } catch (e) {
+      lastError = e instanceof Error ? e.message : "Supabase request failed";
+      if (i < attempts - 1) await new Promise((r) => setTimeout(r, 150 * (i + 1)));
     }
-    return { ok: true, data: body as T };
-  } catch (e) {
-    return {
-      ok: false,
-      error: e instanceof Error ? e.message : "Supabase request failed",
-    };
   }
+  return { ok: false, error: lastError };
 }
 
 export type ReportOrderRow = {
@@ -154,12 +168,37 @@ export async function getCoupon(
 
 /** Coupons expire; only return one that is still usable right now. */
 /** Stand-in for a payment gateway: the rate is enforced server-side. */
-export async function findActiveCoupon(code: string): Promise<CouponRow | null> {
-  if (!code) return null;
+/**
+ * Outcome of a coupon lookup.
+ *
+ * Distinguishing `invalid` from `error` matters: collapsing both into null made
+ * a transient database failure tell the customer their perfectly good code was
+ * expired.
+ */
+export type CouponLookup =
+  | { status: "active"; coupon: CouponRow }
+  | { status: "invalid"; reason: "missing" | "inactive" | "expired" }
+  | { status: "error"; message: string };
+
+export async function resolveCoupon(code: string): Promise<CouponLookup> {
+  if (!code) return { status: "invalid", reason: "missing" };
+
   const result = await getCoupon(code);
-  if (!result.ok || !result.data?.length) return null;
+  if (!result.ok) return { status: "error", message: result.error };
+  if (!result.data?.length) return { status: "invalid", reason: "missing" };
+
   const coupon = result.data[0];
-  if (!coupon.active) return null;
-  if (new Date(coupon.expires_at).getTime() < Date.now()) return null;
-  return coupon;
+  if (!coupon.active) return { status: "invalid", reason: "inactive" };
+
+  const expires = new Date(coupon.expires_at).getTime();
+  if (!Number.isFinite(expires)) return { status: "error", message: "bad expiry" };
+  if (expires < Date.now()) return { status: "invalid", reason: "expired" };
+
+  return { status: "active", coupon };
+}
+
+/** Convenience wrapper for callers that only need a yes/no. */
+export async function findActiveCoupon(code: string): Promise<CouponRow | null> {
+  const lookup = await resolveCoupon(code);
+  return lookup.status === "active" ? lookup.coupon : null;
 }

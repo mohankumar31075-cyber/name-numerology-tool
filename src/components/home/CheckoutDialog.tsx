@@ -109,7 +109,13 @@ export default function CheckoutDialog({
         });
         const data = await res.json();
         if (!res.ok || !data.ok) {
-          setError(data.error || "Could not prepare the payment.");
+          // A retryable failure belongs next to the coupon box, not at the
+          // bottom of the dialog where it is easy to miss.
+          if (data.retry) {
+            setCouponError(data.error || "Please try that code again.");
+          } else {
+            setError(data.error || "Could not prepare the payment.");
+          }
           return null;
         }
         setQuote(data.quote as Quote);
@@ -124,6 +130,14 @@ export default function CheckoutDialog({
     [details]
   );
 
+  /**
+   * Validate and price the coupon in one round trip.
+   *
+   * This used to call /api/coupon/check and then /api/report(quote), which hit
+   * the database twice for the same code. If the second lookup blipped, a
+   * perfectly valid code was reported as expired. `quote` already validates the
+   * coupon and returns the label and price, so one call is enough.
+   */
   async function applyCoupon() {
     const code = coupon.trim().toUpperCase();
     if (!code) {
@@ -133,30 +147,43 @@ export default function CheckoutDialog({
     setCouponError("");
     setBusy(true);
     try {
-      const res = await fetch("/api/coupon/check", {
+      const res = await fetch("/api/report", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code }),
+        body: JSON.stringify({ action: "quote", ...details, coupon: code }),
       });
       const data = await res.json();
-      if (!data.valid) {
-        setCouponError(data.error || "That coupon is not valid.");
-        setQuote(null);
+
+      if (!res.ok || !data.ok) {
+        setCouponError(
+          data.error ||
+            (data.retry
+              ? "We could not check that code just now. Please try again."
+              : "That coupon is not valid or has expired.")
+        );
+        // Keep the existing price when the failure was only transient.
+        if (!data.retry) setQuote(null);
         return;
       }
-      const next = await fetchQuote(code);
-      if (next) {
-        setToast(
-          `Coupon applied — ${next.couponLabel || `${next.discountPercent}% off`}`
-        );
-        if (next.isFree) {
-          await generateFullReport(next.coupon);
-        } else {
-          setPhase("pay");
-        }
+
+      const next = data.quote as Quote;
+      setQuote(next);
+
+      if (!next.discountPercent) {
+        setCouponError("That coupon is not valid or has expired.");
+        return;
+      }
+
+      setToast(
+        `Coupon applied — ${next.couponLabel || `${next.discountPercent}% off`}`
+      );
+      if (next.isFree) {
+        await generateFullReport(next.coupon);
+      } else {
+        setPhase("pay");
       }
     } catch {
-      setCouponError("Could not check that coupon.");
+      setCouponError("Could not check that coupon. Please try again.");
     } finally {
       setBusy(false);
     }
