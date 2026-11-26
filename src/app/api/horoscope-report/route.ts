@@ -5,6 +5,7 @@ import { BASE_REPORT_PRICE } from "@/lib/report";
 import { resolveCoupon } from "@/lib/supabaseRest";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 const BASE_PRICE = BASE_REPORT_PRICE;
 

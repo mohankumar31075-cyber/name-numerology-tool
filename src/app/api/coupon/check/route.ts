@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { resolveCoupon } from "@/lib/supabaseRest";
 
 export const runtime = "nodejs";
+export const maxDuration = 20;
 
 /**
  * Guest-safe coupon validation. Never returns the list of coupons — only
