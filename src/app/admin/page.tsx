@@ -10,7 +10,7 @@ type AdminOrder = {
   languageLabel: string;
   paymentStatus: string;
   paymentReference: string | null;
-  amount: number;
+  amount: number | null;
   createdAt: string;
 };
 
@@ -159,7 +159,7 @@ export default function AdminPage() {
                 </span>
               </div>
               <p className="mt-1 text-[11px] text-ink-400">
-                Ref {order.id.slice(0, 8).toUpperCase()} · ₹{order.amount}
+                Ref {order.id.slice(0, 8).toUpperCase()} · {order.amount === null ? "Price unavailable — check original order" : `₹${order.amount}`}
                 {order.birthDate ? ` · ${order.birthDate}` : ""}
               </p>
               {order.paymentReference && (

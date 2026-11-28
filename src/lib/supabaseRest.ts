@@ -86,6 +86,8 @@ async function rest<T>(
 
 export type ReportOrderRow = {
   id: string;
+  quoted_amount?: number | null;
+  report_details?: Record<string, unknown> | null;
   report_type: "horoscope" | "numerology" | "panchang";
   full_name: string;
   birth_date: string | null;

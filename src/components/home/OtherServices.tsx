@@ -2,7 +2,7 @@ import Link from "next/link";
 
 const SERVICES = [
   {
-    href: "/result",
+    href: "/name-report",
     icon: "✳",
     title: "Name numerology",
     body: "Chaldean name number, life path and corrected spellings.",
@@ -29,8 +29,8 @@ const SERVICES = [
     href: "/matchmaking",
     icon: "♡",
     title: "Matchmaking",
-    body: "A simple compatibility preview using names and birth days.",
-    meta: "Quick preview",
+    body: "A two-person numerology reflection based on names and dates of birth.",
+    meta: "PDF report",
     accent: "iris",
   },
   {

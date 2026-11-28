@@ -25,8 +25,8 @@ export type ReportLanguageCode = (typeof REPORT_LANGUAGES)[number]["code"];
 
 export const GENDERS = ["", "Female", "Male", "Other"] as const;
 
-/** Share of the ₹299 full report that a preview request unlocks as analytics metadata. */
-export const BASE_REPORT_PRICE = 299;
+/** Price of a newly purchased full report, in INR. */
+export const BASE_REPORT_PRICE = 99;
 
 export function languageLabel(code: string | null | undefined): string {
   return (

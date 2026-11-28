@@ -48,7 +48,7 @@ export default async function ReportPage({
 
         <div className="mt-5 rounded-[18px] border border-white/10 bg-white/[0.03] px-5 py-4">
           <p className="text-[10px] font-bold uppercase tracking-eyebrow text-gold-300">
-            {order.report_type} report
+            {typeof order.report_details?.type === "string" ? order.report_details.type : order.report_type} report
           </p>
           <h1 className="mt-1.5 font-serif text-2xl text-ink-50 sm:text-3xl">
             {order.full_name}

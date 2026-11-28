@@ -3,15 +3,14 @@
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { numberReading, type NumberReading } from "@/lib/numberReadings";
-import { whatsappUrl } from "@/lib/site";
 
 const topics = [
   { icon: "☾", title: "Birth Kundli", text: "Explore your birth chart and planetary placements.", href: "/horoscope#form", action: "Start a preview", tag: "Birth chart" },
-  { icon: "✳", title: "Name correction", text: "Explore your name number and spelling suggestions.", href: "/result", action: "Explore name numerology", tag: "Name numerology" },
-  { icon: "♡", title: "Love & compatibility", text: "Try a simple name and birth-day compatibility preview.", href: "/matchmaking", action: "Explore compatibility", tag: "Preview" },
-  { icon: "↗", title: "Career guidance", text: "Ask us about career-focused astrology guidance.", href: whatsappUrl("Hello, I would like to know about career astrology guidance. Please share details and availability."), action: "Ask on WhatsApp", tag: "Enquire", external: true },
-  { icon: "⌁", title: "Mobile number", text: "Discover the digit-sum theme of your mobile number.", href: "#number-explorer", action: "Try number explorer", tag: "Free preview" },
-  { icon: "◈", title: "Vehicle number", text: "Explore a digit-sum reading for your registration.", href: "#number-explorer", action: "Try number explorer", tag: "Free preview" },
+  { icon: "✳", title: "Name correction", text: "Explore your name number and spelling suggestions.", href: "/name-report#form", action: "Explore name numerology", tag: "Name numerology" },
+  { icon: "♡", title: "Love & compatibility", text: "Explore a two-person numerology report.", href: "/readings/compatibility", action: "Explore compatibility", tag: "Preview" },
+  { icon: "↗", title: "Career guidance", text: "Explore your chart’s career themes.", href: "/readings/career", action: "Create career report", tag: "PDF report" },
+  { icon: "⌁", title: "Mobile number", text: "Discover the digit-sum theme of your mobile number.", href: "/readings/mobile", action: "Create report", tag: "PDF report" },
+  { icon: "◈", title: "Vehicle number", text: "Explore a digit-sum reading for your registration.", href: "/readings/vehicle", action: "Create report", tag: "PDF report" },
 ];
 
 export default function ExploreReadings() {
@@ -38,7 +37,7 @@ export default function ExploreReadings() {
       <p className="mt-2 text-sm leading-relaxed text-ink-200">Choose a topic to start a preview or ask our team for details.</p>
     </div>
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-      {topics.map(topic => <Link key={topic.title} href={topic.href} target={topic.external ? "_blank" : undefined} rel={topic.external ? "noopener noreferrer" : undefined} onClick={topic.title === "Mobile number" ? () => changeKind("mobile") : topic.title === "Vehicle number" ? () => changeKind("vehicle") : undefined} className="card-hover group flex min-h-[180px] flex-col rounded-[16px] border border-white/10 bg-white/[0.03] p-5 hover:border-gold-300/40 hover:bg-white/[0.05]">
+      {topics.map(topic => <Link key={topic.title} href={topic.href} className="card-hover group flex min-h-[180px] flex-col rounded-[16px] border border-white/10 bg-white/[0.03] p-5 hover:border-gold-300/40 hover:bg-white/[0.05]">
         <div className="flex items-center justify-between gap-2"><span className="text-2xl text-gold-300" aria-hidden="true">{topic.icon}</span><span className="rounded-full border border-white/10 px-2.5 py-1 text-[10px] text-ink-200">{topic.tag}</span></div>
         <h3 className="mt-3 font-serif text-lg text-ink-50">{topic.title}</h3><p className="mt-1 flex-1 text-[13px] leading-relaxed text-ink-200">{topic.text}</p><span className="mt-4 text-xs font-semibold text-gold-300 group-hover:text-gold-200">{topic.action} →</span>
       </Link>)}

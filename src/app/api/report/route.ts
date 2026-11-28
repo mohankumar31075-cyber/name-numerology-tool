@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { buildFullReport } from "@/lib/fullReport";
 import { calculateKundli } from "@/lib/kundli";
+import { buildSpecialReport, readSpecial, type SpecialDetails } from "@/lib/specialReports";
 import {
   buildNumerologyReport,
   buildPanchangWhatsApp,
@@ -127,12 +128,12 @@ async function composeWhatsAppText(input: BirthDetailsInput) {
   return { whatsappText: report.whatsappText, source: "mcp" };
 }
 
-async function fullReportPayload(input: BirthDetailsInput) {
-  const structured: StructuredReport = buildStructuredReport(input);
+async function fullReportPayload(input: BirthDetailsInput, special?: SpecialDetails | null) {
+  const structured: StructuredReport = special ? buildSpecialReport(input, special) : buildStructuredReport(input);
   // Use the same calculated chart for the on-screen report and its text version.
   // Do not send the old day-of-year approximation as a Kundli.
-  const flat = input.reportType === "horoscope" ? {
-    whatsappText: [structured.headline, structured.subline, ...structured.summary.map(m => `${m.label}: ${m.value}${m.hint ? ` (${m.hint})` : ""}`), "Open your report page to view and download the complete Kundli PDF."].join("\n"),
+  const flat = special || input.reportType === "horoscope" ? {
+    whatsappText: [structured.headline, structured.subline, ...structured.summary.map(m => `${m.label}: ${m.value}${m.hint ? ` (${m.hint})` : ""}`), "Open your report page to view and download the complete PDF."].join("\n"),
     source: structured.source,
   } : await composeWhatsAppText(input);
   return {
@@ -147,25 +148,14 @@ function priceFor(discountPercent: number) {
   return Math.max(0, Math.round(BASE_REPORT_PRICE * (1 - discountPercent / 100)));
 }
 
-/** Base price for a stored order (panchang is the cheaper product). */
-function baseAmountFor(order: ReportOrderRow) {
-  return order.report_type === "panchang" ? 149 : BASE_REPORT_PRICE;
-}
-
-/**
- * What this order actually costs, coupon included.
- *
- * The coupon was validated when the order was created, but that discount used
- * to be forgotten afterwards: the report page then asked for the full price
- * and the customer paid more than the checkout had quoted. Re-read the coupon
- * here so the amount is always derived from the order, not from the request.
- */
+/** Preserve historical prices for orders created before price snapshots existed. */
 async function amountFor(order: ReportOrderRow): Promise<number> {
-  const base = baseAmountFor(order);
+  if (typeof order.quoted_amount === "number") return order.quoted_amount;
+  const base = order.report_type === "panchang" ? 149 : 299;
   if (!order.coupon_code) return base;
-  const coupon = await findActiveCoupon(order.coupon_code);
-  if (!coupon) return base;
-  return priceFor(coupon.discount_percent);
+  const coupon = await resolveCoupon(order.coupon_code);
+  if (coupon.status !== "active") throw new Error("Could not determine the original order price. Please contact support.");
+  return Math.max(0, Math.round(base * (1 - coupon.coupon.discount_percent / 100)));
 }
 
 /* ---------------------------------------------------------------------- POST */
@@ -206,7 +196,7 @@ export async function POST(req: NextRequest) {
       (listed.data ?? []).map(async (row) => ({
         ...serializeOrder(row),
         paymentReference: row.payment_reference,
-        amount: await amountFor(row),
+        amount: await amountFor(row).catch(() => null),
       }))
     );
     return NextResponse.json({ ok: true, orders: rows });
@@ -296,12 +286,14 @@ export async function POST(req: NextRequest) {
     if (action === "pay-intent") {
       const email = clean(body.email, 160);
       const whatsapp = clean(body.whatsapp, 20);
+      let amount: number;
+      try { amount = await amountFor(order); } catch { return NextResponse.json({ok:false, retry:true, error:"Could not confirm the original order price. Please contact support."}, {status:503}); }
       const patch: Partial<ReportOrderRow> = { payment_status: "pending" };
       if (email) patch.contact_email = email;
       if (whatsapp) patch.whatsapp_number = whatsapp;
-      await updateOrder(order.id, patch);
+      const pending = await updateOrder(order.id, patch);
+      if (!pending.ok) return NextResponse.json({ok:false,error:pending.error},{status:500});
 
-      const amount = await amountFor(order);
       const reference = order.id.slice(0, 8).toUpperCase();
       const payMessage = [
         `Hi, I want to pay for my ${order.report_type} report.`,
@@ -350,10 +342,12 @@ export async function POST(req: NextRequest) {
       if (!updated.ok) {
         return NextResponse.json({ ok: false, error: updated.error }, { status: 500 });
       }
+      let amount: number;
+      try { amount = await amountFor(order); } catch { return NextResponse.json({ok:false, retry:true, error:"Could not confirm the original order price. Please contact support."}, {status:503}); }
       const adminMessage = [
         `I have paid for my ${order.report_type} report.`,
         `Name: ${order.full_name}`,
-        `Amount: ₹${await amountFor(order)}`,
+        `Amount: ₹${amount}`,
         `Reference: ${order.id.slice(0, 8).toUpperCase()}`,
         `Payment ref: ${reference}`,
         "",
@@ -376,7 +370,9 @@ export async function POST(req: NextRequest) {
           { status: 402 }
         );
       }
-      const report = await fullReportPayload(input);
+      const special = order.report_details ? readSpecial(order.report_details) : null;
+      if (order.report_details && !special) return NextResponse.json({ok:false,error:"Stored report details are invalid. Please contact support."},{status:500});
+      const report = await fullReportPayload(input, special);
       return NextResponse.json({ ok: true, order: serializeOrder(order), report });
     }
 
@@ -395,7 +391,10 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
-    if (input.reportType === "horoscope") {
+    const special = body.reportDetails == null ? null : readSpecial(body.reportDetails);
+    if (body.reportDetails != null && !special) return NextResponse.json({ok:false,error:"Please check the report details and try again."},{status:400});
+    if (special && input.reportType !== "numerology") return NextResponse.json({ok:false,error:"Invalid report type."},{status:400});
+    if (input.reportType === "horoscope" || special?.type === "career") {
       const chart = calculateKundli(input);
       if (!chart.chart) return NextResponse.json({ ok: false, error: chart.reason }, { status: 400 });
     }
@@ -433,6 +432,8 @@ export async function POST(req: NextRequest) {
 
     const created = await insertOrder({
       report_type: input.reportType,
+      quoted_amount: price,
+      report_details: special,
       full_name: input.fullName,
       birth_date: input.birthDate || null,
       birth_time: input.birthTime || null,
@@ -460,7 +461,7 @@ export async function POST(req: NextRequest) {
 
     // A 100% coupon means there is nothing to pay: hand the report over now.
     if (isFree) {
-      const report = await fullReportPayload(input);
+      const report = await fullReportPayload(input, special);
       return NextResponse.json({
         ok: true,
         free: true,
@@ -582,7 +583,7 @@ export async function POST(req: NextRequest) {
       discountPercent = lookup.coupon.discount_percent;
     }
     const price = priceFor(discountPercent);
-    if (price > 0 && body.paid !== true) {
+    if (price > 0) {
       return NextResponse.json(
         { ok: false, error: "Payment is required before the full report can be generated." },
         { status: 402 }
