@@ -1,5 +1,6 @@
 import HomeExperience from "@/components/home/HomeExperience";
 import OtherServices from "@/components/home/OtherServices";
+import ExploreReadings from "@/components/home/ExploreReadings";
 import { whatsappUrl } from "@/lib/site";
 
 const FEATURES = [
@@ -47,6 +48,8 @@ export default function HomePage() {
   return (
     <main>
       <HomeExperience />
+
+      <ExploreReadings />
 
       <section id="how" className="scroll-mt-24 px-5 pb-16 sm:px-7">
         <div className="mx-auto max-w-6xl">

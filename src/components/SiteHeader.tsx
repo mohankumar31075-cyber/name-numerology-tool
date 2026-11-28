@@ -6,6 +6,7 @@ import { WHATSAPP_NUMBER } from "@/lib/site";
 
 const NAV = [
   { href: "/#reports", label: "Reports" },
+  { href: "/#explore", label: "Explore" },
   { href: "/#how", label: "How it works" },
   { href: "/navagraha", label: "Navagraha" },
   { href: "/panchang", label: "Panchang" },
